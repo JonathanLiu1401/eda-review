@@ -123,6 +123,28 @@ layout finding — coordinates alone are not enough.
   can mask real pin/footprint changes — skim a few before dismissing.
 - **Net names matter for `--current`.** "12V" ≠ "+12V". Copy the exact name from the report.
 
+## Sourcing parts — find/pull a symbol + footprint without searching online
+
+Don't tell the user to go hunt for a symbol. Source it natively, cheapest tier first:
+
+```
+py …\lib\kicad_review_cli.py find-symbol <name>     # search the INSTALLED KiCad libraries (offline)
+py …\lib\kicad_review_cli.py pull-part   <MPN>      # pull from online by part number (easyeda2kicad)
+```
+
+1. **`find-symbol <name>` first.** Most common parts (R, C, op-amps, common ICs, regulators,
+   connectors, MOSFETs, diodes) already ship with KiCad — this is an offline lib lookup, highest
+   trust, no network. It returns `Lib:Symbol` ids you can use directly.
+2. **`pull-part <MPN>` if it's not local.** Resolves the manufacturer part number → LCSC → and
+   converts via `easyeda2kicad` (`pip install easyeda2kicad`) into a `.kicad_sym` + `.kicad_mod` +
+   STEP/WRL 3D model. Keyless, no login.
+3. **Pulled parts are curated, not verified.** Always sanity-check the pinout and footprint against
+   the datasheet before trusting a pulled part. (AI-generating a footprint from a datasheet is the
+   *least* trustworthy path — LLMs are poor at footprint geometry — so prefer pull/local.)
+
+(MCP equivalents: `kicad_find_symbol` / `kicad_pull_part`.) Placing a sourced symbol *into* the
+schematic (with wiring) is not yet built — hand placement/wiring to the KiCad GUI for now.
+
 ## Editing (v1) — guarded, surgical schematic edits
 
 You can now change a component's **Value** or **Footprint association** in the schematic. These

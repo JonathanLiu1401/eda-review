@@ -175,3 +175,26 @@ def register_review_tools(mcp: FastMCP) -> None:
 
         proj = _kicad.discover_project(project_path)
         return propose_edit(proj, reference, "Footprint", footprint, apply=apply)
+
+    @mcp.tool()
+    @_safe
+    def kicad_find_symbol(query: str) -> dict:
+        """Search the INSTALLED KiCad libraries for a symbol by name/fragment (offline,
+        no network). Returns {source:"local", symbols:["Lib:Name", ...]} when found, else
+        {source:"not_found", suggestion:...}. TRY THIS FIRST — most common parts (R, C, op-amps,
+        common ICs, connectors) already ship with KiCad, so no online search is needed."""
+        from kicad_mcp.parts import find_part
+
+        return find_part(query, do_pull=False)
+
+    @mcp.tool()
+    @_safe
+    def kicad_pull_part(mpn: str, out_dir: str | None = None) -> dict:
+        """Pull a part's KiCad symbol + footprint + 3D model from online by manufacturer
+        part number (resolves MPN→LCSC via jlcsearch, converts via easyeda2kicad). Returns
+        the generated file paths. Use when kicad_find_symbol reports not_found. Requires
+        ``easyeda2kicad`` (``pip install easyeda2kicad``). Pulled parts are curated but should
+        be verified (pinout/footprint) against the datasheet before trusting them."""
+        from kicad_mcp.parts import pull as ppull
+
+        return ppull.pull_mpn(mpn, out_dir or mpn)

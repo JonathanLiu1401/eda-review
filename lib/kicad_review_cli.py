@@ -203,6 +203,35 @@ def cmd_set_footprint(a) -> int:
     return 0
 
 
+def cmd_find_symbol(a) -> int:
+    from kicad_mcp.parts import find_part
+
+    res = find_part(a.query, do_pull=False)
+    if res["source"] == "local":
+        print(f"Local KiCad libraries — {len(res['symbols'])} symbol hit(s) for {a.query!r}:")
+        for s in res["symbols"]:
+            print(f"  {s}")
+        if res.get("footprints"):
+            print(f"footprint hits ({len(res['footprints'])}):")
+            for fp in res["footprints"][:20]:
+                print(f"  {fp}")
+    else:
+        print(res["suggestion"])
+    return 0
+
+
+def cmd_pull_part(a) -> int:
+    from kicad_mcp.parts import pull as ppull
+
+    res = ppull.pull_mpn(a.mpn, a.out or a.mpn)
+    print(f"Pulled {res['mpn']} ({res['lcsc']}):")
+    print(f"  symbol:    {res['symbol']}")
+    print(f"  footprint: {res['footprint_dir']}")
+    print(f"  3D model:  {res['model_dir']}")
+    print("\nNote: pulled parts are curated, but verify pinout/footprint against the datasheet.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="kicad_review_cli", description=__doc__)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -255,6 +284,17 @@ def build_parser() -> argparse.ArgumentParser:
     sf.add_argument("footprint", help="new Lib:Footprint")
     sf.add_argument("--apply", action="store_true", help="write to the live schematic")
     sf.set_defaults(func=cmd_set_footprint)
+
+    fs = sub.add_parser("find-symbol", help="search installed KiCad libraries for a symbol")
+    fs.add_argument("query", help="part name or fragment, e.g. LM358")
+    fs.set_defaults(func=cmd_find_symbol)
+
+    pp = sub.add_parser(
+        "pull-part", help="pull symbol+footprint+3D for an MPN via easyeda2kicad (online)"
+    )
+    pp.add_argument("mpn", help="manufacturer part number, e.g. DRV8234RTER")
+    pp.add_argument("--out", default=None, help="output path prefix (default ./<MPN>)")
+    pp.set_defaults(func=cmd_pull_part)
 
     v = sub.add_parser("version", help="show kicad-cli + engine versions")
     v.set_defaults(func=cmd_version)
