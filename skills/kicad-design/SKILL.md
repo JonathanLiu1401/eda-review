@@ -164,6 +164,13 @@ py …\lib\kicad_review_cli.py check-bom    <project>           # sweep EVERY MP
   env vars are set (free, 5-min self-serve registration at developer.digikey.com → an app with
   OAuth2 client-credentials). Until then `check-stock` shows DigiKey as "not configured" and the
   JLCPCB half still answers. Tell the user how to enable it rather than silently skipping DigiKey.
+  - **Use a *Production* app, not Sandbox** — a Sandbox key returns structurally-valid *fake*
+    stock/price the code can't tell from real.
+  - **Honesty note:** the JLCPCB path is verified against the live endpoint; the DigiKey path is
+    implemented to the v4 spec but is first exercised for real when a key is added. If, after
+    adding a key, DigiKey shows **all-zero stock / null prices across every part**, that's a v4
+    field-mapping mismatch (the normalizer fell through its `.get(...)` defaults), **not** real
+    availability — grab one live response body and re-align `normalize_digikey`.
 - **Workflow:** `search-parts` to discover → note the `lcsc` code → `pull-part`/`pull_lcsc` to bring
   in the symbol+footprint → `check-stock` to confirm it's in stock before committing. `check-bom`
   flags out-of-stock, invalid, and **unsourced (no-MPN)** components across the whole design at once.
