@@ -51,6 +51,19 @@ def _getall(node, key):
     return [c for c in (node[1:] if isinstance(node, list) else []) if _head(c) == key]
 
 
+def _net_id(raw) -> int:
+    """A pad/track/via net reference as an int id, or -1 when the board uses the
+    name-only ``(net "Name")`` form (no numeric id) or the reference is missing.
+
+    Some tool-generated boards omit KiCad's numbered net table and reference nets by
+    name everywhere; kicad-cli still loads them, so the parser must not crash on them.
+    """
+    try:
+        return int(_sym(raw))
+    except (TypeError, ValueError):
+        return -1
+
+
 # --------------------------------------------------------------------------- #
 # .kicad_pcb
 # --------------------------------------------------------------------------- #
@@ -118,8 +131,12 @@ def parse_board(pcb_path: str | Path) -> Board:
         if h == "zone":
             # a copper pour carries a net's bulk current; record its net name so the
             # trace-width check does not flag a poured net as "undersized" off its
-            # thin track stubs alone.
+            # thin track stubs alone. Standard KiCad zones carry (net_name "X"); some
+            # tool-generated boards instead carry a name-only (net "X") -- accept either.
             nn = _getval(node, "net_name")
+            if not nn:
+                raw = _getval(node, "net")
+                nn = raw if isinstance(raw, str) and raw else None
             if nn:
                 poured_nets.add(str(nn))
             continue
@@ -131,7 +148,7 @@ def parse_board(pcb_path: str | Path) -> Board:
                 Track(
                     width=float(_getval(node, "width", 0.0)),
                     layer=str(_getval(node, "layer", "")),
-                    net=int(_getval(node, "net", -1)),
+                    net=_net_id(_getval(node, "net", -1)),
                     length=length,
                 )
             )
@@ -139,7 +156,7 @@ def parse_board(pcb_path: str | Path) -> Board:
             size = _getval(node, "size", 0.0)
             drill = _getval(node, "drill", 0.0)
             vias.append(
-                Via(size=float(size), drill=float(drill), net=int(_getval(node, "net", -1)))
+                Via(size=float(size), drill=float(drill), net=_net_id(_getval(node, "net", -1)))
             )
         elif h == "footprint":
             ref = value = ""
@@ -155,7 +172,7 @@ def parse_board(pcb_path: str | Path) -> Board:
             for pad in _getall(node, "pad"):
                 pn = _get(pad, "net")
                 if pn and len(pn) > 1:
-                    fp_nets.add(int(_sym(pn[1])))
+                    fp_nets.add(_net_id(pn[1]))
             footprints.append(
                 Footprint(
                     ref=ref,

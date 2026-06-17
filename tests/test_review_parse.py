@@ -248,6 +248,28 @@ def test_top_level_nets_collected_pad_nets_excluded(tmp_path):
     assert board.footprints[0].nets == {1, 7}
 
 
+def test_parse_board_tolerates_name_only_nets(tmp_path):
+    # Some tool-generated boards omit the numbered net table and reference nets by
+    # name only -- e.g. (net "Net-(U1-OUT)"). kicad-cli loads them, so parse_board must
+    # not crash: a name-only ref degrades to id -1 (which the trace-width check skips).
+    pcb = """
+    (kicad_pcb
+      (segment (start 0 0) (end 1 0) (width 0.2) (layer "F.Cu") (net "Net-(U1-OUT)"))
+      (via (at 0 0) (size 0.6) (drill 0.3) (net "Net-(U1-OUT)"))
+      (footprint "Lib:R" (layer "F.Cu")
+        (at 0 0)
+        (property "Reference" "R1")
+        (pad "1" smd roundrect (net "Net-(U1-OUT)"))
+      )
+    )
+    """
+    board = parse.parse_board(_write(tmp_path, "nameonly.kicad_pcb", pcb))
+    # parsed without crashing; geometry survives, the name-only net degrades to -1
+    assert len(board.tracks) == 1 and board.tracks[0].net == -1
+    assert len(board.vias) == 1 and board.vias[0].net == -1
+    assert board.footprints[0].nets == {-1}
+
+
 def test_net_name_helper_known_and_unknown(tmp_path):
     pcb = """
     (kicad_pcb
@@ -695,10 +717,11 @@ def test_real_board_has_ground_pour():
 
 
 @real_board_only
-def test_real_board_nets_and_footprints_populated():
+def test_real_board_footprints_populated():
     board = parse.parse_board(REAL_BOARD)
-    assert len(board.nets) > 0
     assert len(board.footprints) > 0
-    # net_name round-trips on a real id, proving nets dict is keyed by int id
-    some_id = next(iter(board.nets))
-    assert board.net_name(some_id) == board.nets[some_id]
+    # The numbered net table is optional: some tool-generated boards omit it and
+    # reference nets by name only. When it IS present, net_name must round-trip by id.
+    if board.nets:
+        some_id = next(iter(board.nets))
+        assert board.net_name(some_id) == board.nets[some_id]
