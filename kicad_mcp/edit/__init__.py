@@ -8,6 +8,7 @@ full-file resave through a foreign serializer). Read-only locating reuses the
 """
 
 from .locate import EditError, Instance, find_instance  # noqa: F401
+from .place import clone_instance  # noqa: F401
 from .surgical import set_footprint, set_property, set_value  # noqa: F401
 
 __all__ = [
@@ -17,4 +18,5 @@ __all__ = [
     "set_property",
     "set_value",
     "set_footprint",
+    "clone_instance",
 ]

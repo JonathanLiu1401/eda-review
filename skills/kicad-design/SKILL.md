@@ -155,8 +155,9 @@ byte-identical — no full-file resave, so KiCad-10 constructs are never dropped
 schematic blindly.
 
 ```
-py …\lib\kicad_review_cli.py set-value     <project> <refdes> <value>      # dry run
-py …\lib\kicad_review_cli.py set-footprint <project> <refdes> <Lib:Fp>    # dry run
+py …\lib\kicad_review_cli.py set-value     <project> <refdes> <value>          # dry run
+py …\lib\kicad_review_cli.py set-footprint <project> <refdes> <Lib:Fp>         # dry run
+py …\lib\kicad_review_cli.py place-like     <project> <src-ref> <new-ref> <x> <y>  # dry run
 #  …add --apply to write it to the live file (only applied if ERC does not regress)
 ```
 
@@ -170,12 +171,32 @@ Workflow:
 
 (MCP equivalents: `kicad_set_value` / `kicad_set_footprint`, both dry-run unless `apply=True`.)
 
-**Still out of scope (v1):** placing new symbols + auto-wiring (connectivity is geometric — the
-GUI or a connectivity-aware step is needed), editing `.kicad_sym`/`.kicad_mod` library geometry,
-and any PCB layout. Use `inspect`/`review` to find *what* to change; use the GUI for wiring.
+### Place a part (clone an existing one) — `place-like`
+
+`place-like` adds a **new FLOATING symbol** by *cloning a part type already on the board*: it copies
+an existing placed instance (its library symbol is already cached, so the result is parse-valid),
+mints a fresh UUID + fresh per-pin UUIDs, a new non-colliding refdes, and a grid-snapped position.
+Use it to add another instance of something already present — e.g. another decoupling cap or pull-up.
+
+```
+py …\lib\kicad_review_cli.py place-like <project> C1 C99 50.8 60.96     # clone C1 -> C99 at (x,y) mm
+#  …add --apply to write it (only if the schematic still LOADS in kicad-cli)
+```
+
+The placed part is **unwired**: its pins float, so ERC gains the expected `pin_not_connected`
+warnings — that increase is normal, so the safety gate here is "the schematic still loads" rather
+than "ERC did not regress". **Wiring is geometric and stays a GUI step.** Report the new
+unconnected-pin count to the user and tell them to wire + fine-position it in the KiCad editor.
+(MCP equivalent: `kicad_place_like`, dry-run unless `apply=True`.)
+
+**Still out of scope (v1):** *auto-wiring* (connectivity is geometric — the GUI or a
+connectivity-aware step is needed), placing a *newly-sourced* part type not yet on the board
+(needs `lib_symbols` injection — a later increment; for now clone a part type already present),
+editing `.kicad_sym`/`.kicad_mod` library geometry, and any PCB layout.
 
 ## Scope & roadmap
 
-v0: read + review. **v1 (now): surgical Value/Footprint edits behind a copy→ERC→diff→approve→apply
-guard (above).** Next: a local-libs→`easyeda2kicad`-pull→AI-draft part-sourcing chain feeding a
-gated *place-symbol*; manufacturing-export hard-block.
+v0: read + review. **v1 (now): surgical Value/Footprint edits + clone-`place-like` behind a
+copy→ERC/load→diff→approve→apply guard (above); local-libs→`easyeda2kicad`-pull part sourcing.**
+Next: placing a *newly-sourced* part (lib_symbols injection), then connectivity-aware wiring;
+manufacturing-export hard-block.

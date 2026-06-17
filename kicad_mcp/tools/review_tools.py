@@ -178,6 +178,35 @@ def register_review_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     @_safe
+    def kicad_place_like(
+        project_path: str,
+        source_ref: str,
+        new_ref: str,
+        x: float,
+        y: float,
+        apply: bool = False,
+    ) -> dict:
+        """Place a new FLOATING symbol into the schematic by cloning an existing instance.
+
+        Copies the placed ``source_ref`` block (its library symbol is already cached, so the
+        result is parse-valid), gives it a fresh UUID + every pin a fresh UUID, the new
+        ``new_ref`` refdes, and position ``(x, y)`` mm. The new part is UNWIRED — wiring is
+        geometric and stays a GUI step. The reported ERC increase is the expected
+        unconnected-pin warnings, so the safety gate is "the schematic still LOADS", not "ERC
+        did not regress".
+
+        DRY RUN by default (apply=False): returns the unified ``diff``, ERC delta, and
+        ``loads_ok``; does NOT touch the live file. Review with the human, then call with
+        apply=True (writes only if ``loads_ok``). Use to add another instance of a part TYPE
+        already on the board (e.g. another decoupling cap or pull-up).
+        """
+        from kicad_mcp.edit.guard import propose_place
+
+        proj = _kicad.discover_project(project_path)
+        return propose_place(proj, source_ref, new_ref, (x, y), apply=apply)
+
+    @mcp.tool()
+    @_safe
     def kicad_find_symbol(query: str) -> dict:
         """Search the INSTALLED KiCad libraries for a symbol by name/fragment (offline,
         no network). Returns {source:"local", symbols:["Lib:Name", ...]} when found, else

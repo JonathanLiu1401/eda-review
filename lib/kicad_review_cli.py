@@ -203,6 +203,28 @@ def cmd_set_footprint(a) -> int:
     return 0
 
 
+def cmd_place_like(a) -> int:
+    from kicad_mcp.edit.guard import propose_place
+
+    proj = kicad.discover_project(a.project)
+    res = propose_place(proj, a.source, a.new_ref, (a.x, a.y), apply=a.apply)
+    verb = "APPLIED" if res["applied"] else "DRY RUN (not written)"
+    print(
+        f"{verb}: placed {res['new_ref']} (clone of {res['source_ref']}) "
+        f"at ({res['at'][0]}, {res['at'][1]}) mm"
+    )
+    if res["erc_before"] is not None and res["erc_after"] is not None:
+        print(f"ERC errors: {res['erc_before']} -> {res['erc_after']}  (floating pins expected)")
+    if not res["loads_ok"]:
+        print("WARNING: the cloned schematic failed to load in kicad-cli -- NOT applied.")
+    print(f"note: {res['note']}")
+    print("\n--- diff ---")
+    print(res["diff"] or "(no textual change)")
+    if not res["applied"] and res["loads_ok"]:
+        print("\nRe-run with --apply to write this placement to the live schematic.")
+    return 0
+
+
 def cmd_find_symbol(a) -> int:
     from kicad_mcp.parts import find_part
 
@@ -284,6 +306,18 @@ def build_parser() -> argparse.ArgumentParser:
     sf.add_argument("footprint", help="new Lib:Footprint")
     sf.add_argument("--apply", action="store_true", help="write to the live schematic")
     sf.set_defaults(func=cmd_set_footprint)
+
+    pl = sub.add_parser(
+        "place-like",
+        help="place a new FLOATING symbol by cloning an existing one (dry run unless --apply)",
+    )
+    pl.add_argument("project", help="dir or .kicad_pro/.kicad_sch")
+    pl.add_argument("source", help="refdes of an existing instance to clone, e.g. C1")
+    pl.add_argument("new_ref", help="refdes for the new instance, e.g. C99 (must not exist)")
+    pl.add_argument("x", type=float, help="X position in mm")
+    pl.add_argument("y", type=float, help="Y position in mm")
+    pl.add_argument("--apply", action="store_true", help="write to the live schematic")
+    pl.set_defaults(func=cmd_place_like)
 
     fs = sub.add_parser("find-symbol", help="search installed KiCad libraries for a symbol")
     fs.add_argument("query", help="part name or fragment, e.g. LM358")
