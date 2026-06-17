@@ -102,6 +102,20 @@ def _run_to_file(args: list[str], dest: Path, timeout: int, what: str) -> None:
         raise KiCadError(f"{what} failed (exit {r.returncode}): {(r.stderr or r.stdout).strip()}")
 
 
+def _run_to_dir(args: list[str], dest_dir: Path, timeout: int, what: str) -> Path:
+    """Produce files into ``dest_dir`` via kicad-cli. Clears the dir first and fails loudly
+    on a nonzero exit or no output, so a previous run's files are never returned silently."""
+    dest_dir = Path(dest_dir)
+    if dest_dir.exists():
+        shutil.rmtree(dest_dir, ignore_errors=True)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    r = _run(args, timeout=timeout)
+    produced = list(dest_dir.iterdir())
+    if r.returncode != 0 or not produced:
+        raise KiCadError(f"{what} failed (exit {r.returncode}): {(r.stderr or r.stdout).strip()}")
+    return dest_dir
+
+
 # --------------------------------------------------------------------------- #
 # project discovery
 # --------------------------------------------------------------------------- #
@@ -321,4 +335,84 @@ def render_3d(
         args += ["--side", "bottom"]
     args.append(str(project.pcb))
     _run_to_file(args, dest, timeout, "3D render")
+    return dest
+
+
+# --------------------------------------------------------------------------- #
+# fabrication exports (read-only; the deliverables a board shop / assembler needs)
+# --------------------------------------------------------------------------- #
+def export_gerbers(
+    project: Project, out: str | None = None, timeout: int = DEFAULT_TIMEOUT
+) -> Path:
+    """Export the Gerber set (one file per layer) into a ``gerbers/`` directory."""
+    if not project.pcb:
+        raise KiCadError("No PCB to export Gerbers from.")
+    cli = find_kicad_cli()
+    dest = workdir(project, out) / "gerbers"
+    _run_to_dir(
+        [cli, "pcb", "export", "gerbers", "--output", str(dest) + os.sep, str(project.pcb)],
+        dest,
+        timeout,
+        "Gerber export",
+    )
+    return dest
+
+
+def export_drill(project: Project, out: str | None = None, timeout: int = DEFAULT_TIMEOUT) -> Path:
+    """Export Excellon drill files into a ``drill/`` directory."""
+    if not project.pcb:
+        raise KiCadError("No PCB to export drill files from.")
+    cli = find_kicad_cli()
+    dest = workdir(project, out) / "drill"
+    _run_to_dir(
+        [cli, "pcb", "export", "drill", "--output", str(dest) + os.sep, str(project.pcb)],
+        dest,
+        timeout,
+        "Drill export",
+    )
+    return dest
+
+
+def export_pos(
+    project: Project, out: str | None = None, fmt: str = "csv", timeout: int = DEFAULT_TIMEOUT
+) -> Path:
+    """Export the component placement (pick-and-place) file for assembly."""
+    if not project.pcb:
+        raise KiCadError("No PCB to export a position file from.")
+    cli = find_kicad_cli()
+    ext = "pos" if fmt == "ascii" else fmt
+    dest = workdir(project, out) / f"{project.name}-pos.{ext}"
+    _run_to_file(
+        [
+            cli,
+            "pcb",
+            "export",
+            "pos",
+            "--format",
+            fmt,
+            "--units",
+            "mm",
+            "--output",
+            str(dest),
+            str(project.pcb),
+        ],
+        dest,
+        timeout,
+        "Position-file export",
+    )
+    return dest
+
+
+def export_step(project: Project, out: str | None = None, timeout: int = DEFAULT_TIMEOUT) -> Path:
+    """Export a STEP 3D model of the assembled board (mechanical handoff)."""
+    if not project.pcb:
+        raise KiCadError("No PCB to export a STEP model from.")
+    cli = find_kicad_cli()
+    dest = workdir(project, out) / f"{project.name}.step"
+    _run_to_file(
+        [cli, "pcb", "export", "step", "--output", str(dest), str(project.pcb)],
+        dest,
+        timeout,
+        "STEP export",
+    )
     return dest

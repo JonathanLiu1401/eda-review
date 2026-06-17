@@ -265,3 +265,40 @@ def register_review_tools(mcp: FastMCP) -> None:
 
         proj = _kicad.discover_project(project_path)
         return check_bom(proj.sch)
+
+    @mcp.tool()
+    @_safe
+    def kicad_fab_export(project_path: str, out_dir: str | None = None) -> dict:
+        """Export the fabrication package via kicad-cli (read-only): Gerbers, Excellon drill,
+        pick-and-place position file, and a STEP 3D model. Returns the path of each deliverable.
+        Use for a board handoff to a fab/assembler. (This is an export, not layout authoring.)"""
+        from kicad_mcp.review import fab
+
+        proj = _kicad.discover_project(project_path)
+        return fab.export_fab_package(proj, out_dir)
+
+    @mcp.tool()
+    @_safe
+    def kicad_fab_check(project_path: str, out_dir: str | None = None) -> dict:
+        """Grade whether a board is READY to fabricate AND produce the fab package. Returns
+        ``{ready, drc_errors, findings:[{severity,title,detail}], package:{gerbers, drill,
+        pick_and_place, step}}``. ``ready`` is False on any blocker (DRC errors, or no Edge.Cuts
+        board outline). A review verdict over the fab handoff, not an edit."""
+        from kicad_mcp.review import fab
+
+        proj = _kicad.discover_project(project_path)
+        return fab.check_fab_readiness(proj, out_dir)
+
+    @mcp.tool()
+    @_safe
+    def kicad_set_property(
+        project_path: str, reference: str, property: str, value: str, apply: bool = False
+    ) -> dict:
+        """Surgically set ANY property (e.g. MPN, LCSC, Description) of a placed component in the
+        schematic, in place (byte-clean -- only that property string changes). Generalizes
+        kicad_set_value/kicad_set_footprint. DRY RUN by default; review the ``diff``, then call
+        with apply=True (writes only if ERC did not regress). Updates an EXISTING property."""
+        from kicad_mcp.edit.guard import propose_edit
+
+        proj = _kicad.discover_project(project_path)
+        return propose_edit(proj, reference, property, value, apply=apply)

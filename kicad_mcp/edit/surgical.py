@@ -18,34 +18,39 @@ def _esc(s: str) -> str:
     return s.replace("\\", "\\\\").replace('"', '\\"')
 
 
-def edit_property_text(text: str, uuid: str, prop_name: str, new_value: str) -> str:
-    """Pure (no I/O): return ``text`` with the given instance's ``prop_name`` value
-    replaced by ``new_value``. Anchors on the instance uuid, then the first matching
-    ``(property "<name>" "<old>"`` after it (the lib_symbols cache sits earlier in the
-    file, so it is never matched)."""
-    anchor = f'(uuid "{uuid}")'
-    ai = text.find(anchor)
+def _locate_property(text: str, uuid: str, prop_name: str) -> re.Match:
+    """The ``(property "<name>" "<old>"`` match for ``prop_name`` on the instance ``uuid``.
+    Anchors on the instance uuid first (the lib_symbols cache sits earlier, never matched)."""
+    ai = text.find(f'(uuid "{uuid}")')
     if ai < 0:
         raise EditError(f"instance uuid {uuid} not found in file")
     pat = re.compile(r'\(property "' + re.escape(prop_name) + r'" "((?:[^"\\]|\\.)*)"')
     m = pat.search(text, ai)
     if not m:
         raise EditError(f'property "{prop_name}" not found for instance {uuid}')
+    return m
+
+
+def edit_property_text(text: str, uuid: str, prop_name: str, new_value: str) -> str:
+    """Pure (no I/O): return ``text`` with the given instance's ``prop_name`` value
+    replaced by ``new_value``."""
+    m = _locate_property(text, uuid, prop_name)
     return text[: m.start(1)] + _esc(new_value) + text[m.end(1) :]
 
 
 def set_property(sch_path: str | Path, reference: str, prop_name: str, new_value: str) -> str:
-    """Set one property on the placed instance ``reference`` in place. Returns the old
-    value. Raises EditError if the instance or property is not found."""
+    """Set one property on the placed instance ``reference`` in place. Returns the true old
+    value (for ANY property, not just Value/Footprint). Raises EditError if the instance or
+    property is not found."""
     inst = find_instance(sch_path, reference)
     if inst is None:
         raise EditError(f"no placed instance with Reference {reference!r}")
     path = Path(sch_path)
     text = path.read_text(encoding="utf-8")
+    old = _locate_property(text, inst.uuid, prop_name).group(1)
     new_text = edit_property_text(text, inst.uuid, prop_name, new_value)
     path.write_text(new_text, encoding="utf-8")
-    old = {"Value": inst.value, "Footprint": inst.footprint}.get(prop_name)
-    return old if old is not None else ""
+    return old
 
 
 def set_value(sch_path: str | Path, reference: str, value: str) -> str:

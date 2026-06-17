@@ -191,9 +191,13 @@ schematic blindly.
 ```
 py …\lib\kicad_review_cli.py set-value     <project> <refdes> <value>          # dry run
 py …\lib\kicad_review_cli.py set-footprint <project> <refdes> <Lib:Fp>         # dry run
+py …\lib\kicad_review_cli.py set-property  <project> <refdes> <name> <value>   # dry run (any field: MPN, LCSC, …)
 py …\lib\kicad_review_cli.py place-like     <project> <src-ref> <new-ref> <x> <y>  # dry run
 #  …add --apply to write it to the live file (only applied if ERC does not regress)
 ```
+
+`set-property` generalizes `set-value`/`set-footprint` to **any** existing field (MPN, LCSC, Description, …)
+under the same copy→ERC→diff→approve guard — handy for fixing BOM/sourcing fields. (MCP: `kicad_set_property`.)
 
 Workflow:
 1. **Dry-run** the edit (no `--apply`). The guard copies the project, makes the edit on the copy,
@@ -227,6 +231,22 @@ unconnected-pin count to the user and tell them to wire + fine-position it in th
 connectivity-aware step is needed), placing a *newly-sourced* part type not yet on the board
 (needs `lib_symbols` injection — a later increment; for now clone a part type already present),
 editing `.kicad_sym`/`.kicad_mod` library geometry, and any PCB layout.
+
+## Fabrication — exports + readiness (read-only)
+
+Produce the deliverables a board shop / assembler needs, and grade whether the board is actually
+ready to send out. This is review-agent work — it *packages and assesses* the handoff, it does **not**
+author layout.
+
+```
+py …\lib\kicad_review_cli.py fab-export <project>   # gerbers + drill + pick-and-place + STEP
+py …\lib\kicad_review_cli.py fab-check  <project>   # READY? (DRC + board outline) + the package
+```
+
+`fab-check` is the one to lead with: it runs DRC, checks for an Edge.Cuts board outline, and returns a
+**ready / not-ready** verdict plus the produced package. `ready` is False on any blocker (DRC errors,
+missing outline) — a board with DRC errors is commonly rejected or fabbed with defects, so don't call a
+board "done" until `fab-check` is clean. (MCP: `kicad_fab_export` / `kicad_fab_check`.)
 
 ## Scope & roadmap
 

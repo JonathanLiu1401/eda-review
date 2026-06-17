@@ -335,6 +335,42 @@ def cmd_check_bom(a) -> int:
     return 0
 
 
+def cmd_fab_export(a) -> int:
+    from kicad_mcp.review import fab
+
+    proj = kicad.discover_project(a.project)
+    pkg = fab.export_fab_package(proj, a.out)
+    print(f"{proj.name} — fab package:")
+    for k, v in pkg.items():
+        print(f"  {k:16s}: {v}")
+    return 0
+
+
+def cmd_fab_check(a) -> int:
+    from kicad_mcp.review import fab
+
+    proj = kicad.discover_project(a.project)
+    r = fab.check_fab_readiness(proj, a.out)
+    verdict = "READY for fabrication" if r["ready"] else "NOT fab-ready"
+    tail = f" ({r['drc_errors']} DRC errors)" if r["drc_errors"] else ""
+    print(f"{proj.name}: {verdict}{tail}")
+    for f in r["findings"]:
+        print(f"  [{f['severity']}] {f['title']}")
+        print(f"      {f['detail']}")
+    print("\nFab package (produced regardless, for inspection/handoff):")
+    for k, v in r["package"].items():
+        print(f"  {k:16s}: {v}")
+    return 0
+
+
+def cmd_set_property(a) -> int:
+    from kicad_mcp.edit.guard import propose_edit
+
+    proj = kicad.discover_project(a.project)
+    _print_edit(propose_edit(proj, a.reference, a.property, a.value, apply=a.apply))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="kicad_review_cli", description=__doc__)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -429,6 +465,29 @@ def build_parser() -> argparse.ArgumentParser:
     )
     cb.add_argument("project", help="dir or .kicad_pro/.kicad_sch")
     cb.set_defaults(func=cmd_check_bom)
+
+    fe = sub.add_parser(
+        "fab-export", help="export the fab package: gerbers, drill, pick-and-place, STEP"
+    )
+    add_common(fe)
+    fe.set_defaults(func=cmd_fab_export)
+
+    fc = sub.add_parser(
+        "fab-check", help="grade fab-readiness (DRC + outline) AND produce the fab package"
+    )
+    add_common(fc)
+    fc.set_defaults(func=cmd_fab_check)
+
+    spr = sub.add_parser(
+        "set-property",
+        help="surgically set ANY component property, e.g. MPN (dry run unless --apply)",
+    )
+    spr.add_argument("project", help="dir or .kicad_pro/.kicad_sch")
+    spr.add_argument("reference", help="component refdes, e.g. U1")
+    spr.add_argument("property", help="property name, e.g. MPN, LCSC, Description")
+    spr.add_argument("value", help="new value")
+    spr.add_argument("--apply", action="store_true", help="write to the live schematic")
+    spr.set_defaults(func=cmd_set_property)
 
     v = sub.add_parser("version", help="show kicad-cli + engine versions")
     v.set_defaults(func=cmd_version)

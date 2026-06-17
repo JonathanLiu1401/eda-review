@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT))
 
 import sexpdata  # noqa: E402
 
-from kicad_mcp.edit import find_instance, set_value  # noqa: E402
+from kicad_mcp.edit import find_instance, set_property, set_value  # noqa: E402
 from kicad_mcp.edit.locate import EditError, list_references  # noqa: E402
 from kicad_mcp.edit.surgical import edit_property_text  # noqa: E402
 
@@ -131,6 +131,20 @@ def test_set_value_missing_ref_raises(tmp_path):
     sch.write_text(_MINI, encoding="utf-8")
     with pytest.raises(EditError):
         set_value(sch, "R99", "1k")
+
+
+def test_set_property_returns_true_old_value_for_custom_field(tmp_path):
+    # set_property must report the real old value for ANY field, not just Value/Footprint
+    sch = tmp_path / "x.kicad_sch"
+    mini = _MINI.replace(
+        '(property "Footprint" "Resistor_SMD:R_0603")',
+        '(property "Footprint" "Resistor_SMD:R_0603")\n\t\t(property "MPN" "OLD-MPN-1")',
+    )
+    sch.write_text(mini, encoding="utf-8")
+    old = set_property(sch, "R1", "MPN", "NEW-MPN-2")
+    assert old == "OLD-MPN-1"  # not "" (the pre-fix behavior for non-Value/Footprint fields)
+    assert find_instance(sch, "R1").value == "10k"  # unrelated field untouched
+    assert '(property "MPN" "NEW-MPN-2")' in sch.read_text(encoding="utf-8")
 
 
 # --------------------------------------------------------------------------- #
