@@ -227,3 +227,41 @@ def register_review_tools(mcp: FastMCP) -> None:
         from kicad_mcp.parts import pull as ppull
 
         return ppull.pull_mpn(mpn, out_dir or mpn)
+
+    @mcp.tool()
+    @_safe
+    def kicad_check_stock(mpn: str) -> dict:
+        """Check an MPN (or LCSC code) for validity + LIVE stock on BOTH distributors at once.
+
+        Returns ``{mpn, jlcpcb:{...}, digikey:{...}}`` with, per source: found/valid, stock
+        quantity, price breaks, status, LCSC#/DigiKey#, package, and datasheet. JLCPCB/LCSC is
+        keyless; DigiKey needs ``DIGIKEY_CLIENT_ID``/``DIGIKEY_CLIENT_SECRET`` env (free key at
+        developer.digikey.com) and reports ``configured: False`` until set — the JLCPCB half
+        still works regardless. NOTE: JLCPCB validity is an EXACT MPN/LCSC match (its keyword
+        search is fuzzy, so a non-empty result is NOT proof the part exists)."""
+        from kicad_mcp.parts.stock import check_stock
+
+        return check_stock(mpn)
+
+    @mcp.tool()
+    @_safe
+    def kicad_search_parts(query: str, limit: int = 10) -> dict:
+        """Search JLCPCB/LCSC (keyless) for candidate parts by free-text query (e.g.
+        "0.1uF 0402 X7R" or a partial MPN), stock-ranked. Returns ``{query, candidates:[{lcsc,
+        mpn, manufacturer, stock, library_type, package, price_breaks, datasheet, url}]}``. Feed a
+        candidate's ``lcsc`` code to kicad_pull_part to pull its symbol + footprint."""
+        from kicad_mcp.parts.stock import search_jlcpcb
+
+        return {"query": query, "candidates": search_jlcpcb(query, limit=limit)}
+
+    @mcp.tool()
+    @_safe
+    def kicad_check_bom(project_path: str) -> dict:
+        """Sweep a whole schematic's sourcing: extract every component's MPN/LCSC and check each
+        on JLCPCB + DigiKey in parallel. Returns ``{parts:[{part, value, refs, jlcpcb, digikey}],
+        missing_mpn:[{ref, value}]}`` — surfacing out-of-stock, invalid, or unsourced (no-MPN)
+        parts across the entire design in one call."""
+        from kicad_mcp.parts.bom import check_bom
+
+        proj = _kicad.discover_project(project_path)
+        return check_bom(proj.sch)

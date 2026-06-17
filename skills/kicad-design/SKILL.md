@@ -145,6 +145,31 @@ py …\lib\kicad_review_cli.py pull-part   <MPN>      # pull from online by part
 (MCP equivalents: `kicad_find_symbol` / `kicad_pull_part`.) Placing a sourced symbol *into* the
 schematic (with wiring) is not yet built — hand placement/wiring to the KiCad GUI for now.
 
+## Availability — is a part real, orderable, and in stock?
+
+Before recommending or pulling a part, check it's actually sourceable. Checks **both** JLCPCB/LCSC
+and DigiKey and normalizes the result (stock qty, price breaks, status, LCSC#/DigiKey#, package).
+
+```
+py …\lib\kicad_review_cli.py check-stock  <MPN|LCSC>          # one part, both distributors
+py …\lib\kicad_review_cli.py search-parts "<query>" [--limit N]  # find candidates, stock-ranked (JLCPCB)
+py …\lib\kicad_review_cli.py check-bom    <project>           # sweep EVERY MPN in the schematic
+```
+
+- **JLCPCB/LCSC is keyless** — works out of the box, live stock/price. Validity is an **exact
+  MPN/LCSC match**: JLC's keyword search is fuzzy and returns thousands of rows for a bad query, so
+  "results came back" ≠ "the part is real". `check-stock` already enforces the exact match;
+  `search-parts` deliberately returns the fuzzy candidate list for discovery.
+- **DigiKey needs a free key.** It stays dark until `DIGIKEY_CLIENT_ID` + `DIGIKEY_CLIENT_SECRET`
+  env vars are set (free, 5-min self-serve registration at developer.digikey.com → an app with
+  OAuth2 client-credentials). Until then `check-stock` shows DigiKey as "not configured" and the
+  JLCPCB half still answers. Tell the user how to enable it rather than silently skipping DigiKey.
+- **Workflow:** `search-parts` to discover → note the `lcsc` code → `pull-part`/`pull_lcsc` to bring
+  in the symbol+footprint → `check-stock` to confirm it's in stock before committing. `check-bom`
+  flags out-of-stock, invalid, and **unsourced (no-MPN)** components across the whole design at once.
+
+(MCP equivalents: `kicad_check_stock` / `kicad_search_parts` / `kicad_check_bom`.)
+
 ## Editing (v1) — guarded, surgical schematic edits
 
 You can now change a component's **Value** or **Footprint association** in the schematic. These

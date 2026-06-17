@@ -254,6 +254,85 @@ def cmd_pull_part(a) -> int:
     return 0
 
 
+def _price1(breaks) -> str:
+    return f"${breaks[0]['price']}@{breaks[0]['qty']}" if breaks else "—"
+
+
+def _fmt_jlc(d: dict) -> str:
+    if d.get("error"):
+        return f"error: {d['error']}"
+    if not d.get("found"):
+        return "no exact match (not in JLC assembly catalog)"
+    state = f"in stock {d['stock']:,}" if d["stock"] > 0 else "OUT OF STOCK"
+    return (
+        f"{state} | {d['lcsc']} {d['library_type']} | {d['package']} | {_price1(d['price_breaks'])}"
+    )
+
+
+def _fmt_dk(d: dict) -> str:
+    if not d.get("configured", True):
+        return "not configured (set DIGIKEY_CLIENT_ID/SECRET — free key: developer.digikey.com)"
+    if d.get("error"):
+        return f"error: {d['error']}"
+    if not d.get("found"):
+        return "not found"
+    state = f"in stock {d['stock']:,}" if d["stock"] > 0 else "OUT OF STOCK"
+    return f"{state} | {d['dkpn']} {d.get('status')} | {_price1(d['price_breaks'])}"
+
+
+def cmd_check_stock(a) -> int:
+    from kicad_mcp.parts.stock import check_stock
+
+    r = check_stock(a.mpn)
+    print(a.mpn)
+    print(f"  JLCPCB:  {_fmt_jlc(r['jlcpcb'])}")
+    print(f"  DigiKey: {_fmt_dk(r['digikey'])}")
+    return 0
+
+
+def cmd_search_parts(a) -> int:
+    from kicad_mcp.parts.stock import search_jlcpcb
+
+    hits = search_jlcpcb(a.query, limit=a.limit)
+    print(f"{a.query!r} — {len(hits)} JLCPCB candidate(s), stock-ranked:")
+    for c in hits:
+        print(
+            f"  {c['lcsc'] or '?':>9}  {c['mpn']:<24} stock {c['stock']:>8,}  "
+            f"{c['library_type']:<8} {(c['package'] or ''):<10} {_price1(c['price_breaks'])}"
+        )
+    return 0
+
+
+def cmd_check_bom(a) -> int:
+    from kicad_mcp.parts.bom import check_bom
+
+    proj = kicad.discover_project(a.project)
+    res = check_bom(proj.sch)
+    parts = res["parts"]
+    print(
+        f"{proj.name}: {len(parts)} unique part number(s), "
+        f"{len(res['missing_mpn'])} component(s) with no MPN field"
+    )
+    for p in sorted(parts, key=lambda x: x["part"]):
+        jl, dk = p["jlcpcb"], p["digikey"]
+        jl_s = f"JLC {jl['stock']:,}" if jl.get("found") else "JLC —"
+        if not dk.get("configured", True):
+            dk_s = "DK n/c"
+        elif dk.get("found"):
+            dk_s = f"DK {dk['stock']:,}"
+        else:
+            dk_s = "DK —"
+        in_stock = (jl.get("found") and jl.get("stock", 0) > 0) or (
+            dk.get("found") and dk.get("stock", 0) > 0
+        )
+        flag = "✓" if in_stock else "✗"
+        refs = ",".join(p["refs"][:4]) + ("…" if len(p["refs"]) > 4 else "")
+        print(f"  {flag} {p['part']:<24} {jl_s:<16} {dk_s:<14} [{refs}]")
+    if res["missing_mpn"]:
+        print("  no MPN field:", ", ".join(m["ref"] for m in res["missing_mpn"]))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="kicad_review_cli", description=__doc__)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -329,6 +408,25 @@ def build_parser() -> argparse.ArgumentParser:
     pp.add_argument("mpn", help="manufacturer part number, e.g. DRV8234RTER")
     pp.add_argument("--out", default=None, help="output path prefix (default ./<MPN>)")
     pp.set_defaults(func=cmd_pull_part)
+
+    cs = sub.add_parser(
+        "check-stock", help="check an MPN's validity + live stock on JLCPCB and DigiKey"
+    )
+    cs.add_argument("mpn", help="manufacturer part number or LCSC code, e.g. NE555DR or C7593")
+    cs.set_defaults(func=cmd_check_stock)
+
+    sp = sub.add_parser(
+        "search-parts", help="search JLCPCB/LCSC for candidate parts (keyless, stock-ranked)"
+    )
+    sp.add_argument("query", help="free-text part query, e.g. '0.1uF 0402 X7R'")
+    sp.add_argument("--limit", type=int, default=10, help="max candidates (default 10)")
+    sp.set_defaults(func=cmd_search_parts)
+
+    cb = sub.add_parser(
+        "check-bom", help="check every MPN in a schematic's BOM on JLCPCB + DigiKey"
+    )
+    cb.add_argument("project", help="dir or .kicad_pro/.kicad_sch")
+    cb.set_defaults(func=cmd_check_bom)
 
     v = sub.add_parser("version", help="show kicad-cli + engine versions")
     v.set_defaults(func=cmd_version)
