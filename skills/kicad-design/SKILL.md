@@ -269,10 +269,14 @@ py …\lib\kicad_review_cli.py jlcpcb-apply-rules <project>     # dry run; --app
   (`max(current, floor)`, never loosens), surgically + scoped to `design_settings.rules` (other blocks
   carry the same key names — a blind replace would hit the wrong one), under a dry-run→diff→approve→apply
   guard. Then KiCad's own DRC enforces JLCPCB limits.
-- **Stackup write is intentionally NOT done:** a faithful per-layer stackup needs JLCPCB's *standard-
-  stackup tables* (authoritative dielectric/core thicknesses) — a different source than the DRC
-  capabilities. `jlcpcb-check` validates layer count / copper weight / thickness are a JLCPCB-orderable
-  combo; it does not rewrite the stack (that would mean inventing dielectric values).
+- **Stackup CHECK + reference (done); WRITE deferred.** `jlcpcb-check` compares the board's stackup
+  to JLCPCB's *published standard* (sourced from gsuberland's JLCPCB-impedance-API extraction, cited
+  in `jlcpcb.STACKUP_SOURCE`) and prints the exact reference stack to set in KiCad Board Setup. It
+  frames this as "matches / doesn't match JLCPCB's published standard," never "what JLCPCB will build"
+  (JLCPCB assigns the final stack at order). The auto-**write** is intentionally not done: a board
+  often has *no explicit stackup* to surgically update (generating one from scratch is risky), and
+  the file reflects rather than dictates JLCPCB's build. Only common configs (e.g. 4L/1.6mm) are
+  vendored; for other 4+ layer configs the check says "no reference on file" rather than guessing.
 
 (MCP: `kicad_jlcpcb_check` / `kicad_jlcpcb_apply_rules`.)
 

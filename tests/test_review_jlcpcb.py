@@ -122,6 +122,59 @@ def test_apply_rules_noop_when_already_strict(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
+# stackup: reference lookup, parsing, mismatch
+# --------------------------------------------------------------------------- #
+_STACKUP_PCB = (
+    "(kicad_pcb\n  (setup\n    (stackup\n"
+    '      (layer "F.Cu" (type "copper") (thickness 0.035))\n'
+    '      (layer "dielectric 1" (type "prepreg") (thickness 0.2104) (epsilon_r 4.4))\n'
+    '      (layer "In1.Cu" (type "copper") (thickness 0.0152))\n'
+    '      (layer "dielectric 2" (type "core") (thickness 1.065) (epsilon_r 4.43))\n'
+    '      (layer "In2.Cu" (type "copper") (thickness 0.0152))\n'
+    '      (layer "dielectric 3" (type "prepreg") (thickness 0.2104) (epsilon_r 4.4))\n'
+    '      (layer "B.Cu" (type "copper") (thickness 0.035))\n'
+    "    )\n  )\n)\n"
+)
+
+
+def test_reference_stackup_lookup():
+    assert jlcpcb.reference_stackup(4, 1.6)["code"] == "JLC04161H-7628"
+    assert jlcpcb.reference_stackup(2, 1.6) is None  # 2-layer: no impedance stackup
+    assert jlcpcb.reference_stackup(4, 2.0) is None  # not vendored -> None (caller flags the gap)
+
+
+def test_parse_board_stackup(tmp_path):
+    pcb = tmp_path / "x.kicad_pcb"
+    pcb.write_text(_STACKUP_PCB, encoding="utf-8")
+    layers = jlcpcb.parse_board_stackup(pcb)
+    assert [layer["type"] for layer in layers] == [
+        "copper",
+        "prepreg",
+        "copper",
+        "core",
+        "copper",
+        "prepreg",
+        "copper",
+    ]
+    assert jlcpcb.parse_board_stackup(tmp_path / "missing.kicad_pcb") == []
+
+
+def test_stackup_matches_jlcpcb_reference(tmp_path):
+    pcb = tmp_path / "x.kicad_pcb"
+    pcb.write_text(_STACKUP_PCB, encoding="utf-8")
+    layers = jlcpcb.parse_board_stackup(pcb)
+    assert jlcpcb._stackup_dielectric_mismatch(layers, jlcpcb.STACKUPS[(4, 1.6)]) == []
+
+
+def test_stackup_mismatch_detected(tmp_path):
+    pcb = tmp_path / "x.kicad_pcb"
+    pcb.write_text(_STACKUP_PCB.replace("0.2104", "0.1"), encoding="utf-8")  # generic prepreg
+    layers = jlcpcb.parse_board_stackup(pcb)
+    mismatch = jlcpcb._stackup_dielectric_mismatch(layers, jlcpcb.STACKUPS[(4, 1.6)])
+    assert mismatch and any("prepreg" in m for m in mismatch)
+
+
+# --------------------------------------------------------------------------- #
 # integration: real board
 # --------------------------------------------------------------------------- #
 @requires_board

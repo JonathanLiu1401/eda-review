@@ -385,13 +385,19 @@ def cmd_jlcpcb_check(a) -> int:
     th = f"{r['thickness_mm']}mm" if r["thickness_mm"] else "?"
     print(f"{proj.name}: {r['layers']}-layer {r['copper_oz']:.0f}oz {th} — {geo}")
     if majors:
-        print(
-            f"  ⚠ {len(majors)} design rule(s) LOOSER than JLCPCB — KiCad's DRC won't catch them:"
-        )
+        print(f"  ⚠ {len(majors)} issue(s) vs JLCPCB (rules KiCad's DRC won't catch + stackup):")
     for f in r["findings"]:
         print(f"  [{f['severity']}] {f['title']}")
+    ref = r.get("reference_stackup")
+    if ref:
+        print(
+            f"\nJLCPCB reference stackup for this config ({ref['code']}) — set in KiCad Board Setup:"
+        )
+        for layer in ref["layers"]:
+            er = f"   εr {layer['epsilon_r']}" if layer.get("epsilon_r") else ""
+            print(f"    {layer['role']:<24} {layer['thickness']} mm{er}")
     print(
-        "\nGeometry (track/via/annular) is MEASURED; clearance & copper-to-edge are CONFIG checks."
+        "\nGeometry (track/via/annular) is MEASURED; clearance, copper-to-edge & stackup are CONFIG checks."
     )
     print(f"sources: {', '.join(r['sources'])}  | verified {r['verified']}")
     if majors:
