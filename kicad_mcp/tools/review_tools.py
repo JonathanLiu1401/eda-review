@@ -314,7 +314,7 @@ def register_review_tools(mcp: FastMCP) -> None:
         annular ring are MEASURED from the board). The 'major' findings are CONFIG checks — design
         rules looser than JLCPCB (clearance, copper-to-edge) that KiCad's DRC won't catch — NOT
         measured geometric violations. So manufacturable=True with majors means "JLCPCB can make
-        what's drawn, but your DRC won't protect you from adding a sub-JLCPCB feature.\""""
+        what's drawn, but your DRC won't protect you from adding a sub-JLCPCB feature.\" """
         from kicad_mcp.review import jlcpcb
 
         return jlcpcb.check_jlcpcb_manufacturability(_kicad.discover_project(project_path))
