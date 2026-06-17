@@ -270,6 +270,19 @@ def test_parse_board_tolerates_name_only_nets(tmp_path):
     assert board.footprints[0].nets == {-1}
 
 
+def test_net_id_quoted_all_digit_name_is_not_an_id(tmp_path):
+    # (net "123") is a name-only ref that merely LOOKS numeric -> must degrade to -1,
+    # not be misread as numbered net id 123. A bare (net 5) is a real id and stays 5.
+    pcb = (
+        "(kicad_pcb\n"
+        '  (segment (start 0 0) (end 1 0) (width 0.2) (layer "F.Cu") (net "123"))\n'
+        '  (segment (start 0 0) (end 1 0) (width 0.2) (layer "F.Cu") (net 5))\n'
+        ")\n"
+    )
+    board = parse.parse_board(_write(tmp_path, "digitname.kicad_pcb", pcb))
+    assert sorted(t.net for t in board.tracks) == [-1, 5]
+
+
 def test_net_name_helper_known_and_unknown(tmp_path):
     pcb = """
     (kicad_pcb

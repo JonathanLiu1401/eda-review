@@ -199,6 +199,34 @@ def test_check_stock_invalid_when_neither_in_stock(monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
+# robustness regressions (work-checker): never raise on malformed API data
+# --------------------------------------------------------------------------- #
+def test_normalize_jlc_tolerates_dirty_values():
+    assert stock.normalize_jlc({"componentModelEn": "X", "stockCount": "1,234"})["stock"] == 1234
+    assert stock.normalize_jlc({"stockCount": "N/A"})["stock"] == 0
+    assert stock.normalize_jlc({"componentPrices": 5})["price_breaks"] == []  # non-list
+    assert stock.normalize_jlc({"componentPrices": ["bad"]})["price_breaks"] == []  # non-dict elems
+
+
+def test_normalize_digikey_tolerates_dirty_values():
+    assert stock.normalize_digikey({"QuantityAvailable": "1,234"})["stock"] == 1234
+    assert stock.normalize_digikey({"ProductVariations": [None]})["price_breaks"] == []
+    assert stock.normalize_digikey({"ProductVariations": 5})["dkpn"] is None  # non-list
+
+
+def test_check_jlcpcb_never_raises_on_malformed_record(monkeypatch):
+    monkeypatch.setattr(
+        stock,
+        "_jlc_post",
+        lambda kw, ps, to: [
+            {"componentModelEn": "X", "componentCode": "C1", "stockCount": "1,234"}
+        ],
+    )
+    r = stock.check_jlcpcb("X")  # must NOT raise even though stockCount isn't a plain int
+    assert r["found"] is True and r["stock"] == 1234
+
+
+# --------------------------------------------------------------------------- #
 # BOM extraction + sweep
 # --------------------------------------------------------------------------- #
 def test_extract_parts(tmp_path):
@@ -229,6 +257,50 @@ def test_check_bom_aggregates_and_flags_missing(tmp_path, monkeypatch):
     assert {p["part"] for p in res["parts"]} == {"RC0603FR-0710KL", "C1525"}
     assert all(p["valid"] for p in res["parts"])
     assert [m["ref"] for m in res["missing_mpn"]] == ["R2"]
+
+
+def test_check_bom_one_bad_part_does_not_abort_sweep(tmp_path, monkeypatch):
+    sch = tmp_path / "x.kicad_sch"
+    sch.write_text(_SCH, encoding="utf-8")
+
+    def fake(mpn, timeout=20.0):
+        if mpn == "C1525":
+            raise RuntimeError("boom on this one part")
+        return {
+            "mpn": mpn,
+            "valid": True,
+            "available_on": ["jlcpcb"],
+            "jlcpcb": {"found": True, "stock": 1},
+            "digikey": {},
+        }
+
+    monkeypatch.setattr(bom, "check_stock", fake)
+    parts = {p["part"]: p for p in bom.check_bom(sch)["parts"]}
+    assert set(parts) == {"RC0603FR-0710KL", "C1525"}  # the good part survived
+    assert parts["RC0603FR-0710KL"]["valid"] is True
+    assert parts["C1525"]["valid"] is False  # the bad one degraded to an error entry
+    assert "error" in parts["C1525"]["jlcpcb"]
+
+
+def test_extract_parts_recurses_into_subsheets(tmp_path):
+    (tmp_path / "parent.kicad_sch").write_text(
+        '(kicad_sch\n\t(symbol\n\t\t(property "Reference" "R1")\n\t\t(property "MPN" "ROOT")\n\t)\n'
+        '\t(sheet\n\t\t(property "Sheetfile" "child.kicad_sch")\n\t)\n)\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "child.kicad_sch").write_text(
+        '(kicad_sch\n\t(symbol\n\t\t(property "Reference" "C9")\n\t\t(property "MPN" "SUB")\n\t)\n)\n',
+        encoding="utf-8",
+    )
+    mpns = {p["mpn"] for p in bom.extract_parts(tmp_path / "parent.kicad_sch")}
+    assert mpns == {"ROOT", "SUB"}  # sub-sheet component is no longer dropped
+
+
+def test_extract_parts_missing_root_raises(tmp_path):
+    from kicad_mcp.parts.pull import PartSourceError
+
+    with pytest.raises(PartSourceError):
+        bom.extract_parts(tmp_path / "does_not_exist.kicad_sch")
 
 
 # --------------------------------------------------------------------------- #

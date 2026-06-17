@@ -17,6 +17,7 @@ from kicad_mcp.edit.locate import EditError, find_instance
 
 _UUID_RE = re.compile(r'\(uuid "[0-9a-fA-F-]{36}"\)')
 _AT_RE = re.compile(r"\(at -?[\d.]+ -?[\d.]+( -?[\d.]+)?\)")
+_REF_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]*")  # a safe refdes: letter then alphanumerics/_
 _GRID_MM = 1.27  # KiCad's default schematic grid (50 mil); ERC flags off-grid pin endpoints
 
 
@@ -24,6 +25,24 @@ def _snap(v: float) -> float:
     """Snap a coordinate to the 1.27 mm schematic grid so cloned pins stay on-grid
     (an arbitrary placement coordinate otherwise trips ERC's endpoint_off_grid check)."""
     return round(round(v / _GRID_MM) * _GRID_MM, 4)
+
+
+def _reposition(block: str, at: tuple[float, float]) -> str:
+    """Move the symbol to ``at`` (grid-snapped), shifting the origin AND every property-label
+    ``(at)`` by the same delta so the labels track the body (KiCad stores label positions as
+    absolute coordinates), and preserving the symbol's rotation."""
+    m = _AT_RE.search(block)  # the first (at ...) is the symbol origin
+    if not m:
+        return block
+    o = m.group(0)[4:-1].split()
+    dx, dy = _snap(at[0]) - float(o[0]), _snap(at[1]) - float(o[1])
+
+    def _shift(mm: re.Match) -> str:
+        t = mm.group(0)[4:-1].split()
+        rot = f" {t[2]}" if len(t) > 2 else ""
+        return f"(at {round(float(t[0]) + dx, 4)} {round(float(t[1]) + dy, 4)}{rot})"
+
+    return _AT_RE.sub(_shift, block)
 
 
 def _match_paren(text: str, i: int) -> int:
@@ -73,6 +92,11 @@ def clone_instance(
     """Clone the placed instance ``source_ref`` to a new floating instance ``new_ref`` at
     ``at`` (x, y mm, snapped to the 1.27 mm grid). Returns ``new_ref``. Raises EditError on
     a reference collision or a missing source."""
+    if not _REF_RE.fullmatch(new_ref):
+        raise EditError(
+            f"unsafe reference {new_ref!r}: a refdes must be a letter followed by "
+            "letters/digits/underscores (no quotes, spaces, or parentheses)"
+        )
     if find_instance(sch_path, new_ref) is not None:
         raise EditError(f"reference {new_ref!r} already exists in the schematic")
     src = find_instance(sch_path, source_ref)
@@ -99,8 +123,8 @@ def clone_instance(
         block,
         count=1,
     )
-    # new placement (the first (at x y [rot]) in the block is the symbol origin), grid-snapped
-    block = _AT_RE.sub(f"(at {_snap(at[0])} {_snap(at[1])} 0)", block, count=1)
+    # move to the new (grid-snapped) origin, carrying the property labels + rotation along
+    block = _reposition(block, at)
 
     new_text = text[:end] + "\n" + block + text[end:]
     path.write_text(new_text, encoding="utf-8")

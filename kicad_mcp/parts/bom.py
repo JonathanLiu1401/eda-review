@@ -1,8 +1,9 @@
 """Sweep a whole schematic's sourcing: pull every component's MPN/LCSC and check stock.
 
 ``extract_parts`` reads each placed symbol's properties (MPN / LCSC by their common field
-names); ``check_bom`` de-duplicates by part number and checks each on JLCPCB + DigiKey in
-parallel, so one command answers "is my entire BOM orderable and in stock?".
+names), recursing into hierarchical sub-sheets; ``check_bom`` de-duplicates by part number
+and checks each on JLCPCB + DigiKey in parallel, so one command answers "is my entire BOM
+orderable and in stock?".
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from pathlib import Path
 
 import sexpdata
 
+from kicad_mcp.parts.pull import PartSourceError
 from kicad_mcp.parts.stock import check_stock
 from kicad_mcp.review.parse import _getall, _head, _sym
 
@@ -46,26 +48,50 @@ def _pick(props: dict[str, str], fields) -> str:
     return ""
 
 
-def extract_parts(sch_path: str | Path) -> list[dict]:
-    """[{ref, value, mpn, lcsc}] for every placed (non-power) component on the root sheet."""
-    data = sexpdata.loads(Path(sch_path).read_text(encoding="utf-8"))
-    parts: list[dict] = []
+def _walk(path: Path, seen: set, out: list[dict], is_root: bool) -> None:
+    """Collect placed components from ``path`` and, recursively, its sub-sheet files."""
+    p = path.resolve()
+    if p in seen:
+        return
+    if not p.is_file():
+        if is_root:
+            raise PartSourceError(f"schematic not found: {path}")
+        return  # a referenced sub-sheet that is missing -> skip, don't abort the sweep
+    seen.add(p)
+    try:
+        data = sexpdata.loads(p.read_text(encoding="utf-8"))
+    except Exception as e:  # noqa: BLE001
+        if is_root:
+            raise PartSourceError(f"could not parse {p.name}: {e}") from e
+        return  # a malformed sub-sheet -> skip
     for node in data[1:] if isinstance(data, list) else []:
-        if _head(node) != "symbol":
-            continue
-        props = _properties(node)
-        ref = props.get("Reference", "")
-        if not ref or ref.startswith("#"):  # skip power/virtual symbols (#PWR, #FLG)
-            continue
-        parts.append(
-            {
-                "ref": ref,
-                "value": props.get("Value", ""),
-                "mpn": _pick(props, _MPN_FIELDS),
-                "lcsc": _pick(props, _LCSC_FIELDS),
-            }
-        )
-    return parts
+        h = _head(node)
+        if h == "symbol":
+            props = _properties(node)
+            ref = props.get("Reference", "")
+            if ref.startswith("#"):  # power/virtual symbols (#PWR, #FLG) only
+                continue
+            out.append(
+                {
+                    "ref": ref or "?",  # surface a real part even if it lacks a Reference
+                    "value": props.get("Value", ""),
+                    "mpn": _pick(props, _MPN_FIELDS),
+                    "lcsc": _pick(props, _LCSC_FIELDS),
+                }
+            )
+        elif h == "sheet":
+            sheetfile = _properties(node).get("Sheetfile")
+            if sheetfile:
+                _walk(p.parent / sheetfile, seen, out, is_root=False)
+
+
+def extract_parts(sch_path: str | Path) -> list[dict]:
+    """[{ref, value, mpn, lcsc}] for every placed (non-power) component in the design,
+    recursing through hierarchical sub-sheets. Raises PartSourceError on a missing/unparseable
+    root schematic."""
+    out: list[dict] = []
+    _walk(Path(sch_path), set(), out, is_root=True)
+    return out
 
 
 def check_bom(sch_path: str | Path, timeout: float = 20.0, max_workers: int = 6) -> dict:
@@ -87,14 +113,23 @@ def check_bom(sch_path: str | Path, timeout: float = 20.0, max_workers: int = 6)
         slot["refs"].append(p["ref"])
 
     def _one(info: dict) -> dict:
-        res = check_stock(info["part"], timeout=timeout)
-        return {
-            **info,
-            "valid": res["valid"],
-            "available_on": res["available_on"],
-            "jlcpcb": res["jlcpcb"],
-            "digikey": res["digikey"],
-        }
+        try:
+            res = check_stock(info["part"], timeout=timeout)
+            return {
+                **info,
+                "valid": res["valid"],
+                "available_on": res["available_on"],
+                "jlcpcb": res["jlcpcb"],
+                "digikey": res["digikey"],
+            }
+        except Exception as e:  # noqa: BLE001 - one bad part must not abort the whole sweep
+            return {
+                **info,
+                "valid": False,
+                "available_on": [],
+                "jlcpcb": {"error": f"{type(e).__name__}: {e}"},
+                "digikey": {},
+            }
 
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
         checked = list(ex.map(_one, uniq.values()))

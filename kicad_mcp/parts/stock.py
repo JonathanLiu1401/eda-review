@@ -59,17 +59,27 @@ def _jlc_post(keyword: str, page_size: int, timeout: float) -> list[dict]:
     return ((data.get("data") or {}).get("componentPageInfo") or {}).get("list") or []
 
 
+def _as_int(v) -> int:
+    """Best-effort int from a distributor stock/qty value (handles '1,234', '12.0', None)."""
+    try:
+        return int(float(str(v).replace(",", "")))
+    except (TypeError, ValueError):
+        return 0
+
+
 def normalize_jlc(rec: dict) -> dict:
-    """One JLC catalog record -> the common availability shape (pure)."""
+    """One JLC catalog record -> the common availability shape (pure, total)."""
+    prices = rec.get("componentPrices")
     breaks = [
         {"qty": p.get("startNumber"), "price": p.get("productPrice")}
-        for p in (rec.get("componentPrices") or [])
+        for p in (prices if isinstance(prices, list) else [])
+        if isinstance(p, dict)
     ]
     return {
         "lcsc": rec.get("componentCode"),
         "mpn": rec.get("componentModelEn") or "",
         "manufacturer": rec.get("componentBrandEn"),
-        "stock": int(rec.get("stockCount") or 0),
+        "stock": _as_int(rec.get("stockCount")),
         "package": rec.get("componentSpecificationEn"),
         "library_type": "Basic" if rec.get("componentLibraryType") == "base" else "Extended",
         "preferred": bool(rec.get("preferredComponentFlag")),
@@ -103,17 +113,17 @@ def check_jlcpcb(query: str, timeout: float = 20.0) -> dict:
     """Validity + live stock for an exact MPN or LCSC code on JLCPCB/LCSC (keyless)."""
     try:
         records = _jlc_post(query, 25, timeout)
-    except Exception as e:  # noqa: BLE001 - network -> structured error, never raise
+        match = match_jlc(records, query)
+        if match is None:
+            return {
+                "source": "jlcpcb",
+                "found": False,
+                "note": "no exact MPN/LCSC match (JLC keyword search is fuzzy; total>0 is not validity)",
+                "candidates": [normalize_jlc(r) for r in records[:5]],
+            }
+        return {"source": "jlcpcb", "found": True, **normalize_jlc(match)}
+    except Exception as e:  # noqa: BLE001 - any failure -> structured error, never raise
         return {"source": "jlcpcb", "error": f"{type(e).__name__}: {e}"}
-    match = match_jlc(records, query)
-    if match is None:
-        return {
-            "source": "jlcpcb",
-            "found": False,
-            "note": "no exact MPN/LCSC match (JLC keyword search is fuzzy; total>0 is not validity)",
-            "candidates": [normalize_jlc(r) for r in records[:5]],
-        }
-    return {"source": "jlcpcb", "found": True, **normalize_jlc(match)}
 
 
 # --------------------------------------------------------------------------- #
@@ -165,16 +175,19 @@ def match_digikey(products: list[dict], mpn: str) -> dict | None:
 
 
 def normalize_digikey(p: dict) -> dict:
-    """One DigiKey v4 product -> the common availability shape (pure)."""
-    var = (p.get("ProductVariations") or [{}])[0]
+    """One DigiKey v4 product -> the common availability shape (pure, total)."""
+    vars_ = p.get("ProductVariations")
+    var = vars_[0] if isinstance(vars_, list) and vars_ and isinstance(vars_[0], dict) else {}
+    sp = var.get("StandardPricing")
     breaks = [
         {"qty": b.get("BreakQuantity"), "price": b.get("UnitPrice")}
-        for b in (var.get("StandardPricing") or [])
+        for b in (sp if isinstance(sp, list) else [])
+        if isinstance(b, dict)
     ]
     return {
         "mpn": p.get("ManufacturerProductNumber"),
         "manufacturer": (p.get("Manufacturer") or {}).get("Name"),
-        "stock": int(p.get("QuantityAvailable") or 0),
+        "stock": _as_int(p.get("QuantityAvailable")),
         "status": (p.get("ProductStatus") or {}).get("Status"),
         "orderable": (p.get("ProductStatus") or {}).get("Status") == "Active"
         and not p.get("Discontinued")
@@ -213,14 +226,14 @@ def check_digikey(mpn: str, timeout: float = 20.0) -> dict:
         )
         with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310
             data = json.loads(r.read().decode("utf-8"))
+        match = match_digikey(data.get("Products") or [], mpn)
+        if match is None:
+            return {"source": "digikey", "configured": True, "found": False}
+        return {"source": "digikey", "configured": True, "found": True, **normalize_digikey(match)}
     except urllib.error.HTTPError as e:
         return {"source": "digikey", "configured": True, "error": f"HTTP {e.code}: {e.reason}"}
-    except Exception as e:  # noqa: BLE001 - network -> structured error, never raise
+    except Exception as e:  # noqa: BLE001 - any failure -> structured error, never raise
         return {"source": "digikey", "configured": True, "error": f"{type(e).__name__}: {e}"}
-    match = match_digikey(data.get("Products") or [], mpn)
-    if match is None:
-        return {"source": "digikey", "configured": True, "found": False}
-    return {"source": "digikey", "configured": True, "found": True, **normalize_digikey(match)}
 
 
 # --------------------------------------------------------------------------- #

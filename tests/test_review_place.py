@@ -199,6 +199,28 @@ def test_clone_missing_source_raises(tmp_path):
         clone_instance(sch, "R99", "R2", at=(1.0, 2.0))
 
 
+@pytest.mark.parametrize("bad", ['R"X', "R\\", "R 1", "R(1)", "1R", "R;rm"])
+def test_clone_rejects_unsafe_refdes_without_touching_file(tmp_path, bad):
+    sch = tmp_path / "x.kicad_sch"
+    sch.write_text(_MINI, encoding="utf-8")
+    before = sch.read_text(encoding="utf-8")
+    with pytest.raises(EditError):
+        clone_instance(sch, "R1", bad, at=(50.8, 60.96))
+    assert sch.read_text(encoding="utf-8") == before  # rejected before any write
+
+
+def test_clone_repositions_labels_with_the_body(tmp_path):
+    sch = tmp_path / "x.kicad_sch"
+    sch.write_text(_MINI, encoding="utf-8")
+    # origin (10,20) -> (50.8,60.96); delta (40.8,40.96) must also move the property labels
+    clone_instance(sch, "R1", "R2", at=(50.8, 60.96))
+    text = sch.read_text(encoding="utf-8")
+    assert "(at 50.8 60.96 0)" in text  # new origin
+    assert "(at 52.8 59.96 0)" in text  # Reference label: 12+40.8, 19+40.96
+    assert "(at 52.8 61.96 0)" in text  # Value label:     12+40.8, 21+40.96
+    sexpdata.loads(text)  # still parses
+
+
 # --------------------------------------------------------------------------- #
 # hermetic guard: propose_place with ERC faked (runs in CI, no kicad-cli)
 # --------------------------------------------------------------------------- #

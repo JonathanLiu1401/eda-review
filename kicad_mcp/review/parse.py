@@ -57,11 +57,11 @@ def _net_id(raw) -> int:
 
     Some tool-generated boards omit KiCad's numbered net table and reference nets by
     name everywhere; kicad-cli still loads them, so the parser must not crash on them.
+    A net id is accepted ONLY when the raw token is genuinely an int -- a quoted name
+    that merely looks numeric (e.g. ``(net "123")``) is still a NAME and degrades to -1.
     """
-    try:
-        return int(_sym(raw))
-    except (TypeError, ValueError):
-        return -1
+    v = _sym(raw)
+    return v if isinstance(v, int) and not isinstance(v, bool) else -1
 
 
 # --------------------------------------------------------------------------- #
