@@ -371,6 +371,56 @@ def cmd_set_property(a) -> int:
     return 0
 
 
+def cmd_jlcpcb_check(a) -> int:
+    from kicad_mcp.review import jlcpcb
+
+    proj = kicad.discover_project(a.project)
+    r = jlcpcb.check_jlcpcb_manufacturability(proj)
+    majors = [f for f in r["findings"] if f["severity"] == "major"]
+    geo = (
+        "geometry is within JLCPCB limits"
+        if r["manufacturable"]
+        else "GEOMETRY EXCEEDS JLCPCB LIMITS"
+    )
+    th = f"{r['thickness_mm']}mm" if r["thickness_mm"] else "?"
+    print(f"{proj.name}: {r['layers']}-layer {r['copper_oz']:.0f}oz {th} — {geo}")
+    if majors:
+        print(
+            f"  ⚠ {len(majors)} design rule(s) LOOSER than JLCPCB — KiCad's DRC won't catch them:"
+        )
+    for f in r["findings"]:
+        print(f"  [{f['severity']}] {f['title']}")
+    print(
+        "\nGeometry (track/via/annular) is MEASURED; clearance & copper-to-edge are CONFIG checks."
+    )
+    print(f"sources: {', '.join(r['sources'])}  | verified {r['verified']}")
+    if majors:
+        print(
+            "→ Run `jlcpcb-apply-rules <project> --apply` to tighten the rules to JLCPCB's minimums."
+        )
+    return 0
+
+
+def cmd_jlcpcb_apply_rules(a) -> int:
+    from kicad_mcp.edit.board_rules import propose_jlcpcb_rules
+
+    proj = kicad.discover_project(a.project)
+    r = propose_jlcpcb_rules(proj, apply=a.apply)
+    if not r["changes"]:
+        print(f"{proj.name}: design rules already meet JLCPCB minimums — nothing to change.")
+        return 0
+    verb = "APPLIED" if r["applied"] else "DRY RUN (not written)"
+    print(f"{verb}: raise {len(r['changes'])} design rule(s) to JLCPCB minimums")
+    for c in r["changes"]:
+        print(f"  {c['rule']}: {c['old']} -> {c['new']}")
+    print("\n--- diff ---")
+    print(r["diff"])
+    print(f"sources: {', '.join(r['sources'])} | verified {r['verified']}")
+    if not r["applied"]:
+        print("\nRe-run with --apply to write these into the .kicad_pro.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="kicad_review_cli", description=__doc__)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -488,6 +538,21 @@ def build_parser() -> argparse.ArgumentParser:
     spr.add_argument("value", help="new value")
     spr.add_argument("--apply", action="store_true", help="write to the live schematic")
     spr.set_defaults(func=cmd_set_property)
+
+    jc = sub.add_parser(
+        "jlcpcb-check",
+        help="check the board against JLCPCB's published capabilities (authoritative)",
+    )
+    jc.add_argument("project", help="dir or .kicad_pro/.kicad_pcb")
+    jc.set_defaults(func=cmd_jlcpcb_check)
+
+    ja = sub.add_parser(
+        "jlcpcb-apply-rules",
+        help="raise the board's design rules to JLCPCB minimums (dry run unless --apply)",
+    )
+    ja.add_argument("project", help="dir or .kicad_pro/.kicad_pcb")
+    ja.add_argument("--apply", action="store_true", help="write to the live .kicad_pro")
+    ja.set_defaults(func=cmd_jlcpcb_apply_rules)
 
     v = sub.add_parser("version", help="show kicad-cli + engine versions")
     v.set_defaults(func=cmd_version)

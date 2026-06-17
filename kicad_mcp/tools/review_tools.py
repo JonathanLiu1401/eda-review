@@ -302,3 +302,33 @@ def register_review_tools(mcp: FastMCP) -> None:
 
         proj = _kicad.discover_project(project_path)
         return propose_edit(proj, reference, property, value, apply=apply)
+
+    @mcp.tool()
+    @_safe
+    def kicad_jlcpcb_check(project_path: str) -> dict:
+        """Check a board against JLCPCB's AUTHORITATIVE published capabilities (cited in
+        ``sources``/``verified`` — not hallucinated), keyed to its layer count + copper weight.
+
+        Returns ``{manufacturable, layers, copper_oz, thickness_mm, limits, findings, sources,
+        verified}``. IMPORTANT: ``manufacturable`` reflects GEOMETRY only (track width, via drill,
+        annular ring are MEASURED from the board). The 'major' findings are CONFIG checks — design
+        rules looser than JLCPCB (clearance, copper-to-edge) that KiCad's DRC won't catch — NOT
+        measured geometric violations. So manufacturable=True with majors means "JLCPCB can make
+        what's drawn, but your DRC won't protect you from adding a sub-JLCPCB feature.\""""
+        from kicad_mcp.review import jlcpcb
+
+        return jlcpcb.check_jlcpcb_manufacturability(_kicad.discover_project(project_path))
+
+    @mcp.tool()
+    @_safe
+    def kicad_jlcpcb_apply_rules(project_path: str, apply: bool = False) -> dict:
+        """Raise the board's ``.kicad_pro`` design rules to JLCPCB's authoritative minimums so
+        KiCad's own DRC enforces what JLCPCB can make. Only RAISES looser-than-JLCPCB rules
+        (``max(current, JLCPCB-floor)``); never loosens. Surgical + scoped to design_settings.rules.
+
+        DRY RUN by default: returns ``{changes:[{rule,old,new}], diff, applied, sources, verified}``
+        and does NOT touch the file. Review the diff, then call with apply=True (writes only if the
+        result is valid JSON that round-trips to the intended values)."""
+        from kicad_mcp.edit.board_rules import propose_jlcpcb_rules
+
+        return propose_jlcpcb_rules(_kicad.discover_project(project_path), apply=apply)

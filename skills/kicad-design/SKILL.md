@@ -248,6 +248,34 @@ py …\lib\kicad_review_cli.py fab-check  <project>   # READY? (DRC + board outl
 missing outline) — a board with DRC errors is commonly rejected or fabbed with defects, so don't call a
 board "done" until `fab-check` is clean. (MCP: `kicad_fab_export` / `kicad_fab_check`.)
 
+## JLCPCB manufacturability — check against authoritative limits (+ apply rules)
+
+If the board is made/assembled at **JLCPCB**, the DRC must match *their* real capabilities, not
+KiCad's defaults. Capability values are transcribed + **cited** from JLCPCB's published pages
+(`jlcpcb.py` `SOURCES`/`VERIFIED`) — never invented. Re-verify when JLCPCB updates.
+
+```
+py …\lib\kicad_review_cli.py jlcpcb-check       <project>     # flag features/rules JLCPCB can't make
+py …\lib\kicad_review_cli.py jlcpcb-apply-rules <project>     # dry run; --apply tightens .kicad_pro rules
+```
+
+- **`jlcpcb-check`** compares the board (keyed to its layer count + copper weight) to JLCPCB minimums.
+  Track width / via drill / annular ring are **measured** from geometry (a `blocker` if JLCPCB
+  physically can't make them). Clearance & copper-to-edge are **config** checks — a *rule* looser than
+  JLCPCB is a `major`: KiCad's DRC will pass a sub-JLCPCB feature you add later. So "geometry within
+  limits" **plus** majors means *makeable as drawn, but your DRC won't protect you* — don't read it as
+  all-clear.
+- **`jlcpcb-apply-rules`** raises only the looser-than-JLCPCB rules in `.kicad_pro` to JLCPCB minimums
+  (`max(current, floor)`, never loosens), surgically + scoped to `design_settings.rules` (other blocks
+  carry the same key names — a blind replace would hit the wrong one), under a dry-run→diff→approve→apply
+  guard. Then KiCad's own DRC enforces JLCPCB limits.
+- **Stackup write is intentionally NOT done:** a faithful per-layer stackup needs JLCPCB's *standard-
+  stackup tables* (authoritative dielectric/core thicknesses) — a different source than the DRC
+  capabilities. `jlcpcb-check` validates layer count / copper weight / thickness are a JLCPCB-orderable
+  combo; it does not rewrite the stack (that would mean inventing dielectric values).
+
+(MCP: `kicad_jlcpcb_check` / `kicad_jlcpcb_apply_rules`.)
+
 ## Scope & roadmap
 
 v0: read + review. **v1 (now): surgical Value/Footprint edits + clone-`place-like` behind a
