@@ -455,9 +455,9 @@ def cmd_add_zone(a) -> int:
     proj = kicad.discover_project(a.project)
     r = propose_zone(proj, a.net, a.layer, rect_points(a.x1, a.y1, a.x2, a.y2), apply=a.apply)
     verb = "APPLIED" if r["applied"] else "DRY RUN (not written)"
+    nd = {"numbered": f"#{r['net_ref']}", "named": "by name", "none": "no-net"}[r["net_kind"]]
     print(
-        f"{verb}: zone on net {a.net!r} (#{r['net_num']}) / {a.layer}, "
-        f"rect ({a.x1},{a.y1})..({a.x2},{a.y2})"
+        f"{verb}: zone on net {a.net!r} ({nd}) / {a.layer}, rect ({a.x1},{a.y1})..({a.x2},{a.y2})"
     )
     if not r["loads_ok"]:
         print("WARNING: the edited board failed to load in kicad-cli — NOT applied.")

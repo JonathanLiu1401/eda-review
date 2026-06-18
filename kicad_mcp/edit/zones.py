@@ -21,30 +21,48 @@ import sexpdata
 from kicad_mcp.edit.locate import EditError
 from kicad_mcp.review import kicad
 
-_NET_RE = re.compile(r'\(net (\d+) "((?:[^"\\]|\\.)*)"\)')
+_NET_NUM_RE = re.compile(r'\(net (\d+) "((?:[^"\\]|\\.)*)"\)')  # numbered net table
+_NET_NAME_RE = re.compile(r'\(net "((?:[^"\\]|\\.)*)"\)')  # name-only net reference
 _LAYER_RE = re.compile(r"(F|B|In\d+)\.Cu")
 
 
 def board_nets(pcb_text: str) -> dict[str, int]:
-    """{net_name: net_number} from the .kicad_pcb numbered net table."""
-    return {m.group(2): int(m.group(1)) for m in _NET_RE.finditer(pcb_text)}
+    """{net_name: net_number} from the .kicad_pcb numbered net table (empty on name-only boards)."""
+    return {m.group(2): int(m.group(1)) for m in _NET_NUM_RE.finditer(pcb_text)}
 
 
-def resolve_net(pcb_text: str, net_name: str) -> int:
-    """The net number for ``net_name`` (or 0 for the unconnected net ""). Raises with a clear
-    message when the board has no net table or the net is unknown."""
+def _name_only_nets(pcb_text: str) -> set[str]:
+    """Net names referenced in the name-only ``(net "name")`` form (tool-generated boards)."""
+    return {m.group(1) for m in _NET_NAME_RE.finditer(pcb_text)}
+
+
+def resolve_net(pcb_text: str, net_name: str) -> tuple[str, object]:
+    """Resolve ``net_name`` to a zone net reference (kind, value):
+
+    * ``("none", 0)`` for the unconnected net (``net_name == ""``),
+    * ``("numbered", N)`` when the board has a numbered net table,
+    * ``("named", name)`` when the board references nets by name only (no numbered table) -- a zone
+      then matches that form, so name-only boards are NOT a blocker.
+
+    Raises with a clear message when the net is unknown or the board has no nets at all.
+    """
     if net_name == "":
-        return 0
-    nets = board_nets(pcb_text)
-    if not nets:
+        return ("none", 0)
+    numbered = board_nets(pcb_text)
+    if net_name in numbered:
+        return ("numbered", numbered[net_name])
+    name_only = _name_only_nets(pcb_text)
+    if net_name in name_only:
+        return ("named", net_name)
+    available = sorted(set(numbered) | name_only)
+    if not available:
         raise EditError(
-            "this .kicad_pcb has no numbered net table (name-only or unassigned nets) -- assign "
-            "nets in the schematic and update the PCB (F8) before adding a zone"
+            "this .kicad_pcb has no nets -- assign nets in the schematic and update the PCB (F8) "
+            "before adding a zone"
         )
-    if net_name not in nets:
-        sample = ", ".join(sorted(nets)[:8])
-        raise EditError(f"net {net_name!r} not found on the board (have: {sample}, ...)")
-    return nets[net_name]
+    raise EditError(
+        f"net {net_name!r} not found on the board (have: {', '.join(available[:8])}, ...)"
+    )
 
 
 def _esc(s: str) -> str:
@@ -59,19 +77,25 @@ def rect_points(x1: float, y1: float, x2: float, y2: float) -> list[tuple[float,
 
 
 def make_zone(
-    net_num: int,
+    net_ref: tuple[str, object],
     net_name: str,
     layer: str,
     points: list[tuple[float, float]],
     clearance: float,
     min_thickness: float,
 ) -> str:
-    """The ``(zone ...)`` S-expression block for an unfilled pour outline (pure)."""
+    """The ``(zone ...)`` S-expression block for an unfilled pour outline (pure). ``net_ref`` is the
+    (kind, value) from ``resolve_net``: numbered boards get ``(net N)(net_name ...)``; name-only
+    boards get ``(net "name")`` -- the same form their pads use."""
+    kind, value = net_ref
+    if kind == "named":
+        net_block = f'\t\t(net "{_esc(str(value))}")\n'
+    else:  # "numbered" or "none"
+        net_block = f'\t\t(net {value})\n\t\t(net_name "{_esc(net_name)}")\n'
     pts = " ".join(f"(xy {x} {y})" for x, y in points)
     return (
         f"\t(zone\n"
-        f"\t\t(net {net_num})\n"
-        f'\t\t(net_name "{_esc(net_name)}")\n'
+        f"{net_block}"
         f'\t\t(layer "{layer}")\n'
         f'\t\t(uuid "{uuid.uuid4()}")\n'
         f"\t\t(hatch edge 0.508)\n"
@@ -123,8 +147,8 @@ def propose_zone(
         raise EditError("a zone polygon needs at least 3 points")
 
     orig = Path(project.pcb).read_text(encoding="utf-8")
-    net_num = resolve_net(orig, net_name)
-    zone = make_zone(net_num, net_name, layer, points, clearance, min_thickness)
+    net_ref = resolve_net(orig, net_name)
+    zone = make_zone(net_ref, net_name, layer, points, clearance, min_thickness)
     new_text = add_zone_text(orig, zone)
     sexpdata.loads(new_text)  # structural gate: still parses
 
@@ -151,7 +175,8 @@ def propose_zone(
 
         return {
             "net": net_name,
-            "net_num": net_num,
+            "net_kind": net_ref[0],  # "numbered" | "named" | "none"
+            "net_ref": net_ref[1],
             "layer": layer,
             "points": points,
             "diff": diff,

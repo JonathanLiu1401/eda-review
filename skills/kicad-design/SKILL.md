@@ -305,8 +305,10 @@ py …\lib\kicad_review_cli.py add-zone <project> <net> <layer> <x1> <y1> <x2> <
 ```
 
 `add-zone` inserts a copper-zone outline for an explicit net + copper layer over a rectangle, guarded
-(the edited board must still load in kicad-cli). The net must exist in the board's net table (clear
-error otherwise; `""` = no-net zone). The result is **unfilled** — tell the user to fill it in KiCad.
+(the edited board must still load in kicad-cli). The net is resolved by name against **either** a
+numbered net table **or** a name-only board (tool-generated boards reference nets by name; the zone
+then matches that `(net "name")` form — so name-only nets are NOT a blocker). `""` = no-net zone;
+clear error if the name is unknown. The result is **unfilled** — tell the user to fill it in KiCad.
 (MCP: `kicad_add_zone`.)
 
 Net: review everything; do schematic value/footprint/property edits + clone-place; produce fab +

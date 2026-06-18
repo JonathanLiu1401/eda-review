@@ -53,26 +53,46 @@ _PCB = (
 # --------------------------------------------------------------------------- #
 def test_board_nets_and_resolve():
     assert zones.board_nets(_PCB) == {"": 0, "GND": 1, "VCC": 2}
-    assert zones.resolve_net(_PCB, "GND") == 1
-    assert zones.resolve_net(_PCB, "") == 0  # the no-net zone
+    assert zones.resolve_net(_PCB, "GND") == ("numbered", 1)
+    assert zones.resolve_net(_PCB, "") == ("none", 0)  # the no-net zone
     with pytest.raises(EditError):
         zones.resolve_net(_PCB, "NOPE")  # unknown net
     with pytest.raises(EditError):
-        zones.resolve_net("(kicad_pcb)", "GND")  # no net table at all
+        zones.resolve_net("(kicad_pcb)", "GND")  # no nets at all
+
+
+def test_resolve_and_zone_on_name_only_board(tmp_path, monkeypatch):
+    # tool-generated boards reference nets by NAME only (no numbered table) -- must NOT be a blocker
+    name_only = '(kicad_pcb\n  (footprint "R" (pad "1" (net "GND")) (pad "2" (net "VCC")))\n)\n'
+    assert zones.board_nets(name_only) == {}  # no numbered table
+    assert zones.resolve_net(name_only, "GND") == ("named", "GND")
+    with pytest.raises(EditError):
+        zones.resolve_net(name_only, "NOPE")
+
+    pcb = tmp_path / "b.kicad_pcb"
+    pcb.write_text(name_only, encoding="utf-8")
+    proj = Project(name="b", dir=tmp_path, pro=None, sch=None, pcb=pcb)
+    monkeypatch.setattr(zones, "_loads_ok", lambda p: True)
+    r = zones.propose_zone(proj, "GND", "B.Cu", zones.rect_points(0, 0, 10, 10), apply=True)
+    assert r["net_kind"] == "named" and r["applied"] is True
+    # the zone uses the name-only form (net "GND"), matching the pads -- no net_name
+    assert '(net "GND")' in r["diff"] and "net_name" not in r["diff"]
 
 
 def test_rect_points_normalizes():
     assert zones.rect_points(2, 3, 0, 1) == [(0, 1), (2, 1), (2, 3), (0, 3)]
 
 
-def test_make_zone_and_insert():
-    z = zones.make_zone(1, "GND", "B.Cu", [(0, 0), (1, 0), (1, 1), (0, 1)], 0.5, 0.25)
+def test_make_zone_numbered_and_named():
+    z = zones.make_zone(("numbered", 1), "GND", "B.Cu", [(0, 0), (1, 0), (1, 1), (0, 1)], 0.5, 0.25)
     assert "(net 1)" in z and '(net_name "GND")' in z and '(layer "B.Cu")' in z
-    assert "(polygon (pts (xy 0 0) (xy 1 0)" in z
-    assert z.count("(uuid") == 1
-    out = zones.add_zone_text("(kicad_pcb\n  (foo)\n)\n", z)
-    assert out.rstrip().endswith(")")
-    sexpdata.loads(out)  # the assembled board re-parses
+    assert "(polygon (pts (xy 0 0) (xy 1 0)" in z and z.count("(uuid") == 1
+    # name-only board: zone uses (net "name"), no net_name
+    z2 = zones.make_zone(
+        ("named", "GND"), "GND", "B.Cu", [(0, 0), (1, 0), (1, 1), (0, 1)], 0.5, 0.25
+    )
+    assert '(net "GND")' in z2 and "net_name" not in z2
+    sexpdata.loads(zones.add_zone_text("(kicad_pcb\n  (foo)\n)\n", z2))  # re-parses
 
 
 # --------------------------------------------------------------------------- #
@@ -87,7 +107,7 @@ def test_propose_zone_dry_run_then_apply(tmp_path, monkeypatch):
 
     r = zones.propose_zone(proj, "GND", "B.Cu", pts, apply=False)
     assert r["loads_ok"] is True and r["applied"] is False
-    assert r["net_num"] == 1
+    assert r["net_kind"] == "numbered" and r["net_ref"] == 1
     assert '(net_name "GND")' in r["diff"] and "UNFILLED" in r["note"]
     assert pcb.read_text(encoding="utf-8") == _PCB  # dry run leaves the file untouched
 
