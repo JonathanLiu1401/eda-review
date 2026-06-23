@@ -13,10 +13,7 @@ import sys
 import urllib.parse
 import urllib.request
 
-
-class PartSourceError(RuntimeError):
-    """Raised when a part cannot be resolved or pulled."""
-
+from eda_core.errors import PartSourceError  # noqa: F401  (canonical definition moved to eda_core)
 
 _UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 _JLCSEARCH = "https://jlcsearch.tscircuit.com/components/list.json?search="

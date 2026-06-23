@@ -1,7 +1,7 @@
 {
   "name": "kicad",
-  "description": "Local Claude Code plugin that lets Claude read, understand, and REVIEW KiCad 9/10 schematics and PCBs. Wraps kicad-cli (ERC/DRC/netlist/render) plus a deterministic engineering-check engine (IPC-2221 trace sizing, decoupling, net-class audit, schematic/board parity, DFM, BOM), then renders schematic/board/3D images for Claude to read and a datasheet-grounded review. Read-only in v0 (no design-file edits). Forked from lamaalrajih/kicad-mcp (MIT).",
-  "version": "0.1.0",
+  "description": "Local Claude Code plugin for reviewing PCB designs across EDAs (eda-review). Reads, understands, and REVIEWS KiCad 9/10 (.kicad_pro/.kicad_sch/.kicad_pcb via kicad-cli) and Altium Designer (.PcbDoc/.SchDoc via the eda-agent live bridge): ERC/DRC, deterministic engineering checks (IPC-2221 trace sizing, decoupling, net-class audit, schematic/board parity, DFM), distributor BOM sourcing (DigiKey + JLCPCB stock/validity), and JLCPCB manufacturability + stackup against authoritative data. Guarded, human-approved edits on the KiCad side (copper zones, design rules, stackup); routing/placement is advice-only on every backend. Forked from lamaalrajih/kicad-mcp (MIT).",
+  "version": "0.2.0",
   "author": {
     "name": "jonny",
     "email": "artintel1120@gmail.com"
@@ -9,6 +9,7 @@
   "license": "MIT",
   "keywords": [
     "kicad",
+    "altium",
     "eda",
     "pcb",
     "schematic",
@@ -16,6 +17,8 @@
     "electronics",
     "drc",
     "erc",
+    "jlcpcb",
+    "bom",
     "mcp"
   ]
 }

@@ -8,13 +8,13 @@ orderable and in stock?".
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import sexpdata
 
-from kicad_mcp.parts.pull import PartSourceError
-from kicad_mcp.parts.stock import check_stock
+from eda_core.errors import PartSourceError
+from eda_core.parts import check_parts
+from eda_core.stock import check_stock
 from kicad_mcp.review.parse import _getall, _head, _sym
 
 # field names a KiCad symbol might carry an MPN / LCSC code under (matched case-insensitively)
@@ -97,40 +97,12 @@ def extract_parts(sch_path: str | Path) -> list[dict]:
 def check_bom(sch_path: str | Path, timeout: float = 20.0, max_workers: int = 6) -> dict:
     """Check every distinct MPN/LCSC in the schematic on JLCPCB + DigiKey.
 
-    Returns ``{parts: [{part, value, refs, jlcpcb, digikey}], missing_mpn: [{ref, value}]}``.
-    ``missing_mpn`` lists components that carry no MPN/LCSC field at all -- an unsourced-part
-    gap worth surfacing.
+    Returns ``{parts: [{part, value, refs, valid, available_on, jlcpcb, digikey}],
+    missing_mpn: [{ref, value}]}``. ``missing_mpn`` lists components that carry no MPN/LCSC
+    field at all -- an unsourced-part gap worth surfacing. The de-dup + sourcing sweep lives in
+    :func:`eda_core.parts.check_parts` (shared with the Altium backend); ``check_stock`` is the
+    module global so a test can monkeypatch ``bom.check_stock`` and have it take effect here.
     """
-    parts = extract_parts(sch_path)
-    uniq: dict[str, dict] = {}
-    missing: list[dict] = []
-    for p in parts:
-        key = (p["mpn"] or p["lcsc"]).strip()
-        if not key:
-            missing.append({"ref": p["ref"], "value": p["value"]})
-            continue
-        slot = uniq.setdefault(key.upper(), {"part": key, "value": p["value"], "refs": []})
-        slot["refs"].append(p["ref"])
-
-    def _one(info: dict) -> dict:
-        try:
-            res = check_stock(info["part"], timeout=timeout)
-            return {
-                **info,
-                "valid": res["valid"],
-                "available_on": res["available_on"],
-                "jlcpcb": res["jlcpcb"],
-                "digikey": res["digikey"],
-            }
-        except Exception as e:  # noqa: BLE001 - one bad part must not abort the whole sweep
-            return {
-                **info,
-                "valid": False,
-                "available_on": [],
-                "jlcpcb": {"error": f"{type(e).__name__}: {e}"},
-                "digikey": {},
-            }
-
-    with ThreadPoolExecutor(max_workers=max_workers) as ex:
-        checked = list(ex.map(_one, uniq.values()))
-    return {"parts": checked, "missing_mpn": missing}
+    return check_parts(
+        extract_parts(sch_path), check_stock, timeout=timeout, max_workers=max_workers
+    )

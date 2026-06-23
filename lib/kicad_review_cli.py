@@ -281,7 +281,7 @@ def _fmt_dk(d: dict) -> str:
 
 
 def cmd_check_stock(a) -> int:
-    from kicad_mcp.parts.stock import check_stock
+    from eda_core.stock import check_stock
 
     r = check_stock(a.mpn)
     verdict = (
@@ -296,7 +296,7 @@ def cmd_check_stock(a) -> int:
 
 
 def cmd_search_parts(a) -> int:
-    from kicad_mcp.parts.stock import search_jlcpcb
+    from eda_core.stock import search_jlcpcb
 
     hits = search_jlcpcb(a.query, limit=a.limit)
     print(f"{a.query!r} — {len(hits)} JLCPCB candidate(s), stock-ranked:")

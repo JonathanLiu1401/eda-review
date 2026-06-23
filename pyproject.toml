@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kicad-mcp"
-version = "0.1.0"
-description = "Model Context Protocol (MCP) server for KiCad electronic design automation (EDA) files"
+version = "0.2.0"
+description = "eda-review: review KiCad and Altium PCB designs (ERC/DRC, BOM sourcing, JLCPCB DFM) over MCP"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [
@@ -126,7 +126,7 @@ unfixable = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["kicad_mcp"]
+known-first-party = ["kicad_mcp", "eda_core", "altium_review"]
 force-sort-within-sections = true
 
 [tool.ruff.format]
@@ -165,6 +165,8 @@ addopts = [
     "--strict-markers",
     "--strict-config",
     "--cov=kicad_mcp",
+    "--cov=eda_core",
+    "--cov=altium_review",
     "--cov-report=term-missing",
     "--cov-report=html:htmlcov",
     "--cov-report=xml",
@@ -191,7 +193,7 @@ filterwarnings = [
 ]
 
 [tool.coverage.run]
-source = ["kicad_mcp"]
+source = ["kicad_mcp", "eda_core", "altium_review"]
 branch = true
 omit = [
     "tests/*",
@@ -227,7 +229,7 @@ skips = ["*_test.py", "*/test_*.py"]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["kicad_mcp*"]
+include = ["kicad_mcp*", "eda_core*", "altium_review*"]
 exclude = ["tests*", "docs*"]
 
 [tool.setuptools.package-data]

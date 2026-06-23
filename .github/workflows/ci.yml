@@ -6,13 +6,14 @@ on:
   pull_request:
     branches: [ main, develop ]
 
-# This fork adds the "kicad-review" design-review layer on top of
-# lamaalrajih/kicad-mcp. CI validates THAT layer — the review engine
+# This fork adds the "eda-review" design-review layer on top of
+# lamaalrajih/kicad-mcp. CI validates THAT layer — the EDA-neutral shared core
+# (eda_core), the Altium backend (altium_review), the KiCad review engine
 # (kicad_mcp/review), the review MCP tools, the CLI shim, and their tests.
 # The inherited upstream modules carry pre-existing lint/format debt under the
 # pinned ruff and are intentionally out of scope here. Paths checked:
-#   kicad_mcp/review  kicad_mcp/tools/review_tools.py  lib  kicad_mcp/__init__.py
-#   tests/test_review_periph.py
+#   eda_core  altium_review  kicad_mcp/review  kicad_mcp/edit  kicad_mcp/parts
+#   kicad_mcp/tools/review_tools.py  lib  kicad_mcp/__init__.py  tests/test_review_*.py
 
 jobs:
   lint:
@@ -36,10 +37,10 @@ jobs:
       run: uv sync --group dev
 
     - name: Lint with ruff (review layer)
-      run: uv run ruff check kicad_mcp/review kicad_mcp/edit kicad_mcp/parts kicad_mcp/tools/review_tools.py lib kicad_mcp/__init__.py tests/test_review_*.py
+      run: uv run ruff check eda_core altium_review kicad_mcp/review kicad_mcp/edit kicad_mcp/parts kicad_mcp/tools/review_tools.py lib kicad_mcp/__init__.py tests/test_review_*.py
 
     - name: Check formatting with ruff (review layer)
-      run: uv run ruff format --check kicad_mcp/review kicad_mcp/edit kicad_mcp/parts kicad_mcp/tools/review_tools.py lib kicad_mcp/__init__.py tests/test_review_*.py
+      run: uv run ruff format --check eda_core altium_review kicad_mcp/review kicad_mcp/edit kicad_mcp/parts kicad_mcp/tools/review_tools.py lib kicad_mcp/__init__.py tests/test_review_*.py
 
   test:
     runs-on: ${{ matrix.os }}
@@ -75,7 +76,7 @@ jobs:
     # checks / report / engine surfaces on synthetic data) always run. Confirmed bugs
     # are encoded as strict xfails (they flip the suite red the day they are fixed).
     - name: Run tests (review layer)
-      run: uv run python -m pytest tests/test_review_*.py -o addopts="" -v --cov=kicad_mcp/review --cov=kicad_mcp/edit --cov=kicad_mcp/parts --cov-report=xml --cov-fail-under=70
+      run: uv run python -m pytest tests/test_review_*.py -o addopts="" -v --cov=eda_core --cov=altium_review --cov=kicad_mcp/review --cov=kicad_mcp/edit --cov=kicad_mcp/parts --cov-report=xml --cov-fail-under=70
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v4

@@ -1,4 +1,16 @@
-# KiCad MCP Server
+# eda-review — KiCad + Altium design review
+
+> **This fork ("eda-review") is a review-first PCB tool that spans more than one EDA.** On top of
+> the upstream KiCad MCP server it adds: a deterministic engineering-check / review engine, distributor
+> **BOM sourcing** (DigiKey + JLCPCB stock/validity), **JLCPCB manufacturability + stackup** checks
+> against authoritative data, guarded human-approved edits on the KiCad side (copper zones, design
+> rules, stackup), and an **Altium Designer** backend that drives the [eda-agent](https://github.com/salitronic/eda-agent)
+> live bridge (see [`docs/altium_eda_agent_setup.md`](docs/altium_eda_agent_setup.md) and the
+> [feasibility spec](docs/superpowers/specs/2026-06-22-altium-support-feasibility.md)). Routing and
+> placement are **advice-only** on every backend — LLMs review well and build badly.
+>
+> The shared, EDA-neutral logic lives in `eda_core/`; the Altium backend in `altium_review/`; the
+> KiCad backend in `kicad_mcp/`. The sections below are the upstream KiCad MCP setup guide.
 
 This guide will help you set up a Model Context Protocol (MCP) server for KiCad. While the examples in this guide often reference Claude Desktop, the server is compatible with **any MCP-compliant client**. You can use it with Claude Desktop, your own custom MCP clients, or any other application that implements the Model Context Protocol.
 

@@ -239,7 +239,7 @@ def register_review_tools(mcp: FastMCP) -> None:
         developer.digikey.com) and reports ``configured: False`` until set — the JLCPCB half
         still works regardless. NOTE: JLCPCB validity is an EXACT MPN/LCSC match (its keyword
         search is fuzzy, so a non-empty result is NOT proof the part exists)."""
-        from kicad_mcp.parts.stock import check_stock
+        from eda_core.stock import check_stock
 
         return check_stock(mpn)
 
@@ -250,7 +250,7 @@ def register_review_tools(mcp: FastMCP) -> None:
         "0.1uF 0402 X7R" or a partial MPN), stock-ranked. Returns ``{query, candidates:[{lcsc,
         mpn, manufacturer, stock, library_type, package, price_breaks, datasheet, url}]}``. Feed a
         candidate's ``lcsc`` code to kicad_pull_part to pull its symbol + footprint."""
-        from kicad_mcp.parts.stock import search_jlcpcb
+        from eda_core.stock import search_jlcpcb
 
         return {"query": query, "candidates": search_jlcpcb(query, limit=limit)}
 

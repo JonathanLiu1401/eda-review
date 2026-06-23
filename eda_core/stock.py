@@ -13,7 +13,8 @@ Two sources, normalized to one shape:
   the JLCPCB half still works.
 
 Pure normalization/matching helpers are separated from the network calls so they test
-without a key or a connection.
+without a key or a connection. EDA-neutral: only needs an MPN, so both the KiCad and the
+Altium backend share this module.
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from kicad_mcp.parts.pull import PartSourceError
+from eda_core.errors import PartSourceError
 
 _UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"  # JLC blocks the default urllib UA
 
@@ -41,7 +42,8 @@ _DK_TOKEN: dict = {"val": None, "exp": 0.0}  # cached client-credentials token
 
 # Local DigiKey credentials file (outside any repo, never committed). Read when the env
 # vars aren't set, so the key works in every process without an environment restart.
-# Override the path with KICAD_REVIEW_CREDENTIALS.
+# Override the path with KICAD_REVIEW_CREDENTIALS. (Name kept for back-compat with the
+# user's existing stored key -- do NOT rename this file or env var.)
 _CREDS_FILE = Path(
     os.environ.get(
         "KICAD_REVIEW_CREDENTIALS", str(Path.home() / ".claude" / "kicad-review-credentials.json")

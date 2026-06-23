@@ -14,7 +14,8 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from kicad_mcp.parts import bom, stock  # noqa: E402
+from eda_core import stock  # noqa: E402  (distributor logic now lives in the shared core)
+from kicad_mcp.parts import bom  # noqa: E402
 
 network = pytest.mark.skipif(
     os.environ.get("KICAD_REVIEW_NETWORK_TESTS") != "1",
